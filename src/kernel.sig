@@ -24,22 +24,13 @@ sig
   val streal : string -> real
   val stil : string -> int list
   val ilts : int list -> string
-  val timer_glob1 : real ref
-  val timer_glob2 : real ref
-  val timer_glob3 : real ref
-  val timer_glob4 : real ref
-  val timer_glob5 : real ref
   val inv_cmp : ('a * 'b -> 'c) -> 'b * 'a -> 'c
   val string_of_var : term -> string
   val length_geq : 'a list -> int -> bool
   val length_eq : 'a list -> int -> bool
   val first_diff : ('a * 'a -> order) -> 'a list -> 'a list -> ('a * 'a) option
   val compare_term_size : term * term -> order
-  val hashMod : int -> string -> int
   val split_pair : char -> string -> string * string
-  val append_endline_lock : string -> string -> unit
-  val appendl : string -> string list -> unit
-  val bare_readl_app : (string -> unit) -> string -> unit
     
   (* programs *)
   type id = int

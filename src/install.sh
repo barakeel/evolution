@@ -2,8 +2,8 @@ if [ -f "config" ]
 then
 echo 'Keep config'
 else
-   echo 'Create config from config_template_smt'; 
-   cp config_template_smt config 
+   echo 'Create config from config_template'; 
+   cp config_template config 
 fi
 
 echo 'Overwrite dir.sml'

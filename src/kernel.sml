@@ -70,12 +70,6 @@ val streal = valOf o Real.fromString
 fun ilts il = String.concatWith " " (map its il)
 fun stil s = map string_to_int (String.tokens Char.isSpace s)
 
-val timer_glob1 = ref 0.0
-val timer_glob2 = ref 0.0
-val timer_glob3 = ref 0.0
-val timer_glob4 = ref 0.0
-val timer_glob5 = ref 0.0
-
 fun inv_cmp cmp (a,b) = cmp (b,a)
 
 fun string_of_var x = fst (dest_var x) 
@@ -106,7 +100,6 @@ fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
 
 type id = int
 datatype prog = Ins of (id * prog list);
-type sol = anum * (int * prog) list
 
 fun prog_compare (Ins(s1,pl1),Ins(s2,pl2)) =
   cpl_compare Int.compare (list_compare prog_compare) ((s1,pl1),(s2,pl2))
