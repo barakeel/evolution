@@ -12,6 +12,6 @@ cd src
 sh install.sh
 ```
 
-### Code
+### Experiments
 The main part of the code is located in the file "selfedit.sml". 
 Run commands in the comments at the end of this file to reproduce the results.
