@@ -11,7 +11,7 @@ val pe = print_endline;
 
 exception Check;
 val timer = ref 0;
-val timelimit = ref 10000;
+val timelimit = ref 40000;
 fun ct n = 
   (timer := !timer + n; if !timer > !timelimit then raise Check else ())
 
@@ -23,11 +23,15 @@ val dim = 16
 
 (* nullary *)
 val mat0 = let fun f i j = 0.0 in mat_tabulate f (dim,dim) end
+val mat1 = let fun f i j = 1.0 in mat_tabulate f (dim,dim) end
 
 fun mati_aux itop = 
-  let fun f i j =  if i = itop then 1.0 else 0.0 in 
+  let fun f i j =  if i = itop andalso j = 0 then 1.0 else 0.0 in 
     mat_tabulate f (dim,dim)
   end
+
+val mativ = Vector.tabulate (dim, fn i => mati_aux i)
+fun sing m = ([m],1)
   
 fun matrand () = 
   let 
@@ -36,12 +40,18 @@ fun matrand () =
   in 
     mat_tabulate f (dim,dim) 
   end
-  
+
 fun xvar fl (x,y) = (ct 1; x)
+fun tokf n fl (x,y) = (ct 1; sing (Vector.sub (mativ, n)))
+
 fun yvar fl (x,y) = (ct 1; y)
 val empty = ([] : mat list ,0)
 fun nullf fl (x,y) = (ct 1; empty)
-fun randf fl (x,y) = (ct 40; ([matrand ()],1))
+fun randf fl (x,y) = (ct 40; sing (matrand ()))
+
+val task_glob = ref empty
+fun taskf fl (x,y) = (ct 1; !task_glob)
+
 
 (* matrix *)
 fun unf oper fl = case fl of 
@@ -58,14 +68,26 @@ fun unf oper fl = case fl of
 fun relu m = let fun f x = if x > 0.0 then x else 0.0 in mat_map f m end
 fun reluf fl = unf relu fl 
 
-fun norm m = let fun f x = if x > 10.0 then 10.0 else 
-   if x < ~10.0 then ~10.0 else x in mat_map f m end
-fun normf fl = unf norm fl
+fun up m = let fun f x = x * 2.0 in mat_map f m end
+fun down m = let fun f x = x * 0.1 in mat_map f m end
+
+fun upf fl = unf up fl
+fun downf fl = unf down fl
 
 fun flip m = let fun f x = ~x in mat_map f m end
 fun flipf fl = unf flip fl
 
 fun transposef fl = unf mat_transpose fl
+
+fun mat_permute m = 
+  let 
+    val (dim1,dim2) = mat_dim m 
+    fun f i j = mat_sub m ((i-1) mod dim1) j
+  in
+    mat_tabulate f (dim1,dim2)
+  end
+
+fun permutef fl = unf mat_permute fl
 
 fun binf tim oper fl = case fl of
    [f1,f2] => (fn (x,y) => 
@@ -80,9 +102,22 @@ fun binf tim oper fl = case fl of
     end)
   | _ => raise Msg "binf"
 
+
+fun mat_add m1 m2 =
+  let fun f i j = mat_sub m1 i j + (mat_sub m2 i j: real) in
+    mat_tabulate f (mat_dim m1)
+  end
+  
 fun addf fl = binf 1 mat_add fl
 
-fun mat_prod m1 m2 = 
+fun mat_hadam m1 m2 =
+  let fun f i j = mat_sub m1 i j * (mat_sub m2 i j: real) in
+    mat_tabulate f (mat_dim m1)
+  end
+  
+fun hadamf fl = binf 1 mat_hadam fl
+
+fun mat_mult m1 m2 = 
   let 
     val m2t = mat_transpose m2
     fun f i j = scalar_product (Vector.sub (m1,i)) (Vector.sub(m2t,j))
@@ -90,7 +125,7 @@ fun mat_prod m1 m2 =
     mat_tabulate f (dim,dim)
   end
 
-fun multf fl = binf dim mat_prod fl
+fun multf fl = binf dim mat_mult fl
 
 (* list *)
 fun lpop (l,n) = case l of [] => empty | a :: m => (m,n-1)
@@ -108,6 +143,21 @@ fun push fl = case fl of
       case l1 of a :: _ => lpush a (l2,n2) | _ => (l2,n2)
     end
     ))
+  | _ => raise Msg "push"
+
+fun interleave_aux1 l1 l2 = case (l1,l2) of
+    ([],_) => l2
+  | (_,[]) => l1
+  | (a1 :: m1, a2 :: m2) => a1 :: a2 :: interleave_aux1 m1 m2
+
+fun interleave_aux2 (l1,n1) (l2,n2) = 
+  if n1 + n2 > !timelimit then raise Check else (interleave_aux1 l1 l2, n1+n2)
+  
+fun interleave fl = case fl of
+   [f1,f2] => (fn xy => 
+     let val ((l1,n1),(l2,n2)) = (f1 xy, f2 xy) in 
+       (ct (n1+n2+1); interleave_aux2 (l1,n1) (l2,n2))
+     end)
   | _ => raise Msg "push"
 
 (* control flow *)
@@ -133,16 +183,34 @@ fun condnull fl = case fl of
 
 exception Open;
 
-val execv = Vector.fromList 
+val execl1 =
   [
-  (xvar,"x",0), (yvar, "y", 0), 
-  (xvar,"x",0), (yvar, "y", 0), 
-  (nullf, "null",0), (randf, "rand", 0),
-  (reluf, "relu", 1), (normf, "norm",1), (flipf, "flip", 1), 
+  (xvar,"x",0), 
+  (yvar, "y", 0),
+  (nullf, "null",0), 
+  (randf, "rand", 0),
+  (taskf, "task", 0),
+  (reluf, "relu", 1), 
+  (* (upf, "up",1), *)
+  (downf, "down", 1),
+  (* (flipf, "flip", 1), *)
   (transposef, "transpose", 1),
-  (addf, "add", 2), (multf, "mult", 2),
-  (pop, "pop", 1), (push, "push", 2), (while3, "while", 3),
-  (xvar, "quote", 1)]
+  (permutef, "permute", 1),
+  (addf, "add", 2), 
+  (multf, "mult", 2),
+  (hadamf, "hadam", 2), 
+  (pop, "pop", 1), 
+  (push, "push", 2), 
+  (interleave, "inter", 2),
+  (while3, "fold", 3)
+  ]
+  
+val execl2 = 
+  let fun f i (a,b,c) = [(a,b,c), (tokf (2 * i), "#" ^ b, 0)] in
+    List.concat (mapi f execl1)
+  end
+ 
+val execv = Vector.fromList execl1
 
 val _ = if Vector.length execv > dim
         then raise Msg "execv is too big" else ()
@@ -160,15 +228,8 @@ fun flatten_prog ptop =
   end;
 
 
-fun mk_exec (Ins (id,pl)) = 
-  if id = Vector.length execv - 1 (* quote *) then 
-    let 
-      val idl = flatten_prog (hd pl) 
-      val r = (map mati_aux idl, length idl)
-    in 
-      (fn (x,y) => (ct 1; r))
-    end
-  else (get_fun id) (map mk_exec pl)
+fun mk_exec (Ins (id,pl)) = (get_fun id) (map mk_exec pl)
+
 
 (* --------------------------------------------------------------------------
    Converting between syntax tree and token list and arbitrary integer 
@@ -242,6 +303,7 @@ fun random_prog n =
   end   
  
 fun randprog () = random_prog (random_int (5,20)); 
+fun randpmem () = (randprog (),empty)
 
 (* --------------------------------------------------------------------------
    Printing program
@@ -268,7 +330,11 @@ fun token_of_mem (l,_) = case l of
         if i >= Vector.length execv then rev acc else 
         collect ((i,Vector.sub (Vector.sub (m,i),0)) :: acc) (i+1)
       val disl1 = collect [] 0
-      fun f x = if Real.isFinite x then Math.tanh x else 0.0
+      fun f x = if not (Real.isFinite x) then x else 
+                if x > 1.0 then 1.0 else 
+                if x < 0.0 then 0.0 else x
+                
+                (* Math.exp x   else 0.0 *)
       val disl2 = normalize_distrib (map_snd f disl1)
     in
       select_in_distrib disl2
@@ -283,61 +349,232 @@ fun next_token mem hist pf =
   
 fun next_prog_aux nmax npar acc mem hist pf = 
   if npar <= 0 then 
-    (if null acc then NONE else SOME (unflatten_prog (rev acc)))
+    if null acc then NONE else SOME (unflatten_prog (rev acc), mem)
   else if nmax <= 0 then NONE else
   let
     val (id,newmem) = next_token mem hist pf
     val newhist = (mati_aux id :: fst hist, snd hist + 1)
-    val arity = if id >= Vector.length execv then 1 else get_arity id
+    val arity = get_arity id
     val newnpar = npar + arity - 1
-    val newacc = if id >= Vector.length execv then acc else id :: acc
+    val newacc = id :: acc
   in
     next_prog_aux (nmax-1) newnpar newacc newmem newhist pf
   end
   
 fun next_prog nmax mem pf = next_prog_aux nmax 1 [] mem pf 
+
+(* --------------------------------------------------------------------------
+   Scores
+   -------------------------------------------------------------------------- *)
+
+fun bti b = if b then 1 else 0
+
+fun sample p = next_prog 40 empty empty (p,mk_exec p)
+
+fun sample_pmem (p,mem) = 
+  (
+  task_glob := ([mat0],1);
+  next_prog 40 mem empty (p,mk_exec p)
+  )
+
+fun sample_token pf = 
+  (
+  task_glob := ([mat1],1); 
+  fst (next_token empty empty pf)
+  )
+
+fun score_aux nremain ncorrect pf = 
+  if nremain <= 0 then ncorrect else 
+  score_aux (nremain - 1) (ncorrect + bti (sample_token pf = 0)) pf
+
+fun score (p,mem) = Real.fromInt (score_aux 100 0 (p,mk_exec p))
+
+(* --------------------------------------------------------------------------
+   MCTS (rewarding parent programs for their children)
+   -------------------------------------------------------------------------- *)
+
+
+type node =
+{
+  state    : prog * obj,
+  parent   : int option,
+  children : int list ref,
+  visits   : real ref,
+  sum      : real ref
+}
+
+val fake_prog = Ins (~1,[])
+
+val fake_node = 
+  {
+  state = (fake_prog, empty), 
+  parent = NONE, 
+  children = ref [], 
+  visits = ref 1.0, 
+  sum = ref 0.0
+  }
   
-fun loop_prog n p = 
-  if n <= 0 then SOME p else
-  case next_prog 40 empty empty (p,mk_exec p) of
-      NONE => NONE
-    | SOME newp => loop_prog (n-1) newp
+val myarr = Array.array (20000,fake_node)
+val indexl = List.tabulate (Array.length myarr, I)
+fun init_myarr () = app (fn i => Array.update (myarr,i,fake_node)) indexl
+
+
+(* selection *)
+val sqrt2 = Math.sqrt 2.0
+
+fun uct pvis id =
+   let val {visits,sum,...} = Array.sub (myarr,id) in
+     (!sum) / (!visits) + sqrt2 * Math.sqrt (Math.ln pvis / (!visits))
+   end
+
+fun best_child pvis idl =
+  let val l = map_assoc (uct pvis) idl in
+    fst (hd (dict_sort compare_rmax l))
+  end
+
+fun select id = 
+  let
+    (* val _ = pe ("select " ^ its id) *)
+    val {children,visits,...} = Array.sub (myarr,id)
+    val cl = !children
+  in 
+    if null cl orelse Real.fromInt (length cl) < 2.0 * (Math.pow (!visits,0.5)) 
+    then id
+    else select (best_child (!visits) cl)
+  end
+
+(* expansion *)
+val idl_glob = ref [] 
+fun init_idl () = idl_glob := tl indexl
+fun free_id () = 
+   if null (!idl_glob) then raise Msg "no more free id" else
+   let val id = hd (!idl_glob) in idl_glob := tl (!idl_glob); id end
+    
+fun expand id = 
+  let  
+    val {state,children,...} = Array.sub (myarr,id)
+    val ind = case sample_pmem state of SOME x => x | NONE => randpmem ()
+    val cid = free_id ()
+    (* val _ = pe ("expand " ^ its cid) *)
+    val cnode = 
+      {
+      state = ind,
+      parent = SOME id,
+      children = ref [],
+      visits = ref 0.0,
+      sum = ref 0.0
+      }
+  in
+    children := cid :: !children;
+    Array.update (myarr, cid, cnode);
+    cid
+  end
+
+(* backup *)
+fun backup sc id =
+  let 
+    (* val _ = pe ("backup " ^ its self) *)
+    val {parent,visits,sum,...} = Array.sub (myarr,id)
+    val _ = visits := (!visits) + 1.0
+    val _ = sum := (!sum) + sc
+  in
+    case parent of 
+      NONE => () 
+    | SOME pid => backup sc pid
+  end
+
+fun backup_score id = backup (score (#state (Array.sub (myarr,id)))) id
+
+(* --------------------------------------------------------------------------
+   Population evolution with MCTS local search
+   -------------------------------------------------------------------------- *)
+
+fun pstats id = 
+  let val {visits,sum,state,...} : node = Array.sub (myarr,id) in
+    pe (
+    its id ^ ": " ^ 
+    its (Real.round (!visits)) ^ " " ^ pretty_real (!sum / !visits) ^
+    " " ^ string_of_prog (fst state)
+    )
+  end;
+
+fun get_visits id = ! (#visits (Array.sub (myarr,id)))
+fun get_mean id = 
+  let val {visits,sum,...} : node = Array.sub (myarr,id) in
+    !sum / !visits
+  end;
+
+fun children_stats () = 
+  let 
+    val {visits,children,...} : node = Array.sub (myarr,0)
+     val vis = Real.round (!visits)
+  in 
+    if vis mod 1000 <> 0 orelse null (!children) then () else
+    let
+      val id1 = (fst o hd) 
+        (dict_sort compare_rmax (map_assoc get_visits (!children))) 
+      val id2 = (fst o hd) 
+        (dict_sort compare_rmax (map_assoc get_mean (!children))) 
+    in
+      (
+      pe ("visits " ^ its vis ^ ", children " ^ its (length (!children)));
+      pstats id1; pstats id2
+      )
+    end
+  end;
+
+fun loop () = 
+  if null (!idl_glob) then () else 
+  let 
+    val _ = children_stats ()
+    val sid = select 0 
+    val cid = expand sid
+    val _ = backup_score cid 
+  in
+    loop ()
+  end;
+
+fun init_root state =
+  let val root = 
+    {state = state, parent = NONE, children = ref [], 
+     visits = ref 1.0, sum = ref 0.0} 
+  in
+    init_idl (); init_myarr (); Array.update (myarr, 0, root)
+  end;
+  
+
+ 
+fun best_state () = 
+  let 
+    val {children,...} : node = Array.sub (myarr,0)
+    val id = (fst o hd) 
+        (dict_sort compare_rmax (map_assoc get_visits (!children)))
+    val state = #state (Array.sub (myarr,id))
+    val d = ref (eempty prog_compare)
+    fun f (x : node) = d := eadd (fst (#state x)) (!d);
+    val _ = Array.app f myarr;
+    val n = elength (!d);
+    in
+      pe ("#### Selected " ^ its id ^ " ####");
+      pe (its n ^ " different programs");
+      pstats id; 
+      state
+  end;
+
+fun looptop state = (init_root state; loop (); looptop (best_state ()));
+
 
 (*
 load "selfedit";
+timelimit := 10000; 
 
-timelimit := 10000;  
+val init_state = (Ins (3,[]), empty);
+looptop init_state;
 
-let val p = randprog () in  pp p; pp (valOf newpo);
+init_root init_state; loop ();
 
-fun compete (ncur,ntot) sum (bestp,bestsc) (ntry,depth) =
-  if ncur >= ntot then ((bestp,bestsc), int_div sum ntot) else 
-  let
-    fun score d n p = 
-      if n <= 0 then length (elist d) else
-      let val newd =
-        case loop_prog depth p of NONE => d | SOME c => eadd c d
-      in
-        score newd (n-1) p
-      end
-    val newp = randprog ()
-    val newsc = score (eempty prog_compare) ntry newp
-    val newsum = sum + newsc
-    val (newbestp,newbestsc) = 
-      if newsc > bestsc then (newp,newsc) else (bestp,bestsc)
-  in
-    compete (ncur+1,ntot) newsum (newbestp,newbestsc) (ntry,depth)
-  end;
 
-fun f i =   
-  let 
-    val (((p,bestsc),aversc),t) = 
-      add_time (compete (0,1000) 0 (Ins (0,[]),~1)) (100,i);
-  in
-    pe (its i ^ ": " ^ rts_round 2 aversc ^ " " ^ its bestsc)
-  end;
-  
-app f (List.tabulate (10,fn i => i+1));  
-  
+
+
 *)
 
