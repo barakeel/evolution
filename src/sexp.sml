@@ -44,11 +44,13 @@ fun parse_sexp acc l = case l of
      
 fun string_to_sexp s = parse_sexp [] (lex_sexp s)
 
-fun sexp_to_string sexp = case sexp of
+fun sexp_to_string_aux sexp = case sexp of
     Atom s => s
-  | Sexp sl => "(" ^ String.concatWith " " (map sexp_to_string sl) ^ ")"
+  | Sexp sl => "(" ^ String.concatWith " " (map sexp_to_string_aux sl) ^ ")"
 
-
+fun sexp_to_string sexp = case sexp of
+    Atom s => "(" ^ s ^ ")"
+  | Sexp sl => "(" ^ String.concatWith " " (map sexp_to_string_aux sl) ^ ")"
 
 end (* struct *)
 

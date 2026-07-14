@@ -350,7 +350,7 @@ fun next_token mem hist pf =
 fun next_prog_aux nmax npar acc mem hist pf = 
   if npar <= 0 then 
     if null acc then NONE else SOME (unflatten_prog (rev acc), mem)
-  else if nmax <= 0 then NONE else
+    else if nmax <= 0 then NONE else
   let
     val (id,newmem) = next_token mem hist pf
     val newhist = (mati_aux id :: fst hist, snd hist + 1)
