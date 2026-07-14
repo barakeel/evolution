@@ -434,26 +434,30 @@ fun randpfmem () =
     ((p,f),[])
   end;
 
-fun loop n acc genf scoref = 
-  if n <= 0 then first_n 1000 (dict_sort compare_rmin (fst (!acc))) else
+fun loop (n,ntot,rt,to) acc genf scoref = 
+  if (n >= ntot andalso not (isSome to)) orelse
+     (n mod 100 = 0 andalso isSome to 
+      andalso Time.toReal (Timer.checkRealTimer rt) > valOf to)
+  then (n, first_n 1000 (dict_sort compare_rmin (fst (!acc))))
+  else
   let
     val p = genf ()
     val sc = scoref p
     val _ = acc := ((p,sc) :: fst (!acc), snd (!acc) + 1)
     val _ = if snd (!acc) <= 10000 then () else
-      let 
+      let  
         val l = dict_sort compare_rmin (fst (!acc))
         val newacc = (first_n 1000 l, 1000)
         val (bp,bsc) = hd (fst newacc)
       in   
-        pe (its n ^ " " ^ rts_round 4 bsc ^ " " ^ string_of_prog bp);
+        (* pe (its n ^ " " ^ rts_round 4 bsc ^ " " ^ string_of_prog bp); *)
         acc := newacc
       end
   in
-    loop (n-1) acc genf scoref
+    loop (n+1,ntot,rt,to) acc genf scoref
   end;
 
-fun loop2 n genf scoref = loop n (ref ([],0)) genf scoref ;
+fun loop2 (n,ntot,rt,to) genf scoref = loop (n,ntot,rt,to) (ref ([],0)) genf scoref ;
 
 
 fun samplep pf = case next_prog 40 empty empty pf of NONE => randprog () 
@@ -473,22 +477,25 @@ val exl =
 
 fun score2f s = 
   let 
+    val _ = timelimit := 10000
     val p = unzip_prog (stinf s)
     val genf = mk_gen p
     val scoref = score_exl exl
-    val (r,t) = add_time (loop2 10000000 genf) scoref
+    val rt = Timer.startRealTimer ()
+    val ((n,r),t) = add_time (loop2 (0,0,rt,SOME 5.0) genf) scoref
     val sc = snd (hd r)
   in
-    pe (rts_round 4 sc ^ " " ^ rts_round 2 t ^ " " ^ string_of_prog p);
-    rts sc
-  end;
+    pe ("score: " ^ rts_round 4 sc ^ ", time: " ^ rts_round 2 t ^ 
+        ", iterations: " ^ its n ^ ", prog: " ^ string_of_prog p);
+    rts sc ^ " " ^ its n ^ " " ^ (infts o zip_prog) p
+  end
 
-end
+end (* struct *)
 
 (*
 
 load "selfedit2"; open kernel aiLib selfedit2;
-timelimit := 10000;
+
 
 val p = prog_of_string "(half)";
 val s = infts (zip_prog p);
