@@ -44,6 +44,8 @@ fun dreml kl d = foldl (uncurry drem) d kl;
    Other tools
    ------------------------------------------------------------------------- *)
 
+val pe = print_endline
+
 fun range (a,b,f) = List.tabulate (b-a+1,fn i => f (i+a));
 
 fun subsets_of_size_aux n (l,ln) = 
@@ -66,6 +68,7 @@ fun subsets_of_size n l =  subsets_of_size_aux n (l, length l)
 val infts = IntInf.toString
 val stinf = valOf o IntInf.fromString
 val streal = valOf o Real.fromString 
+val stint = string_to_int
 
 fun ilts il = String.concatWith " " (map its il)
 fun stil s = map string_to_int (String.tokens Char.isSpace s)

@@ -2,12 +2,15 @@ signature kernel =
 sig
 
   include Abbrev
+  type ('a,'b) dict = ('a, 'b) Redblackmap.dict
   
   (* directory *)
   val selfdir : string 
+  
+  (* config *) 
+  val configd : (string,string) dict
    
   (* dictionaries shortcut*)
-  type ('a,'b) dict = ('a, 'b) Redblackmap.dict
   val dfindo : 'a -> ('a, 'b) dict -> 'b option
   val eaddi : 'a -> 'a Redblackset.set ref -> unit
   val ememi : 'a -> 'a Redblackset.set ref -> bool
@@ -17,11 +20,13 @@ sig
   val dreml : 'a list -> ('a,'b) dict -> ('a,'b) dict
   
   (* useful tools *)
+  val pe : string -> unit
   val range : int * int * (int -> 'a) -> 'a list
   val subsets_of_size : int -> 'a list -> 'a list list
   val infts : IntInf.int -> string
   val stinf : string -> IntInf.int
   val streal : string -> real
+  val stint : string -> int
   val stil : string -> int list
   val ilts : int list -> string
   val inv_cmp : ('a * 'b -> 'c) -> 'b * 'a -> 'c

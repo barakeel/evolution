@@ -7,7 +7,6 @@ val ERR = mk_HOL_ERR "selfedit2"
 exception Msg of string;
 type obj = real list * int
 type exec = obj * obj -> obj
-val pe = print_endline;
 
 (* --------------------------------------------------------------------------
    Timer
@@ -475,20 +474,61 @@ val exl =
      1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0]]: real list list
 
 
+val ptime = (stint (dfind "ptime" configd) handle NotFound => 10000)
+
 fun score2f s = 
   let 
-    val _ = timelimit := 10000
-    val p = unzip_prog (stinf s)
+    val (s1,s2) = pair_of_list (String.tokens Char.isSpace s)
+    val _ = timelimit := ptime
+    val p = unzip_prog (stinf s1)
     val genf = mk_gen p
     val scoref = score_exl exl
     val rt = Timer.startRealTimer ()
-    val ((n,r),t) = add_time (loop2 (0,0,rt,SOME 5.0) genf) scoref
+    val ((n,r),t) = add_time (loop2 (0,0,rt,SOME (streal s2)) genf) scoref
     val sc = snd (hd r)
   in
     pe ("score: " ^ rts_round 4 sc ^ ", time: " ^ rts_round 2 t ^ 
         ", iterations: " ^ its n ^ ", prog: " ^ string_of_prog p);
     rts sc ^ " " ^ its n ^ " " ^ (infts o zip_prog) p
   end
+
+fun stats sl2 = 
+  let 
+    fun f x = 
+      let val (a,b,c) = triple_of_list (String.tokens Char.isSpace x) in
+        (stinf c, streal a)
+      end
+    val rl = map f sl2;
+    val (i,sc) = hd (dict_sort compare_rmin rl);
+  in
+    pe ("best score: " ^ rts_round 4 sc ^ 
+        ", best prog: " ^ string_of_prog (unzip_prog i));
+    sc
+  end;
+
+fun half_progl sl2 = 
+  let 
+    fun f x = 
+      let val (a,b,c) = triple_of_list (String.tokens Char.isSpace x) in
+        (stinf c, streal a)
+      end
+    val rl = map f sl2
+  in
+    map fst (first_n (length sl2 div 2) (dict_sort compare_rmin rl))
+  end;
+
+fun half_loop ncore n gtime scl pl = 
+  if n <= 0 then (pl,rev scl) else
+  let 
+    val _ = pe (its (length pl) ^ " programs")
+    val inputl = map (fn x => infts x ^ " " ^ rts gtime) pl
+    val (outputl,t) = add_time (parmap_sl ncore "selfedit2.score2f") inputl;
+    val _ = pe ("time: " ^ rts_round 2 t)
+    val sc = stats outputl
+    val newpl = half_progl outputl
+  in
+    half_loop ncore (n-1) (gtime * 2.0) (sc :: scl) newpl
+  end;
 
 end (* struct *)
 
@@ -497,45 +537,35 @@ end (* struct *)
 load "selfedit2"; open kernel aiLib selfedit2;
 
 
-val p = prog_of_string "(half)";
-val s = infts (zip_prog p);
-val s' = score2f s;  
+val ncore = 4;
+val ntarget = 64;
+val gtime = 0.5;
+val niter = 4;
 
+val pl = List.tabulate (ntarget, fn _ => zip_prog (randprog ()));
+val ((rl,scl),t1) = add_time (half_loop ncore 4 gtime []) pl; length rl;
+val (i1,sc1) = hd (dict_sort compare_rmin (number_fst 1 scl));
+val inputl = map (fn x => infts x ^ " " ^ rts (gtime * Real.fromInt niter)) pl;
+val (outputl,t2) = add_time (parmap_sl ncore "selfedit2.score2f") inputl;
+val sc2 = stats outputl;
 
-val sl = List.tabulate (10, fn x => (infts o zip_prog o randprog) ()); 
+val expname = "hello1"
+val expdir = selfdir ^ "/exp/" ^ expname
+val _ = mkDir_err expdir;
 
-val sl2 = parmap_sl 5 "selfedit2.score2f" sl;
-
-
-val s = string_of_prog p;
-val p' =  prog_of_string s;
-val p = randprog ();
-
-val (data,t) = add_time read_oeis ();
-val exl = random_subset 1 data; map length exl;
-
-
-val p' = unzip_prog (stinf s);
-
-(* scoring a generator *)
-
-  
-parmap_sl "score2f" 
-
-
-  
-
-  
-  parmap_sl ncore funname sl 
-  
-
-val (r,t) = add_time (loop2 10 randprog) score2f;
-hd r;
-
-val scoref = score_exl exl
-val (r,t) = add_time (loop2 1000000 randprog) scoref;
-val sc = snd (hd r);
-
+writel (expdir ^ "/result") 
+["para:" ^ 
+   " iter " ^ its niter ^ 
+   ", time " ^ rts gtime ^ 
+   ", targets " ^ its ntarget, 
+ "",
+ "comp:" ^ 
+   " score " ^ rts_round 4 sc1 ^ 
+   " at iteration " ^ its i1  ^ 
+   " in " ^ rts_round 2 t1 ^ " seconds",
+ "rand:" ^ 
+   " score " ^ rts_round 4 sc2 ^ 
+   " in " ^ rts_round 2 t2 ^ " seconds"];
 
 *)
 
