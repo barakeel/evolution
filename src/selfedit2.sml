@@ -520,7 +520,8 @@ fun half_progl sl2 =
 fun half_loop ncore n gtime scl pl = 
   if n <= 0 then (pl,rev scl) else
   let 
-    val _ = pe (its (length pl) ^ " programs")
+    val _ = pe (its (length pl) ^ " programs for " ^ 
+                rts gtime ^ " seconds each")
     val inputl = map (fn x => infts x ^ " " ^ rts gtime) pl
     val (outputl,t) = add_time (parmap_sl ncore "selfedit2.score2f") inputl;
     val _ = pe ("time: " ^ rts_round 2 t)
@@ -537,12 +538,13 @@ end (* struct *)
 load "selfedit2"; open kernel aiLib selfedit2;
 
 
-val ncore = 4;
-val ntarget = 64;
+val ncore = 10;
+val ntarget = 100;
 val gtime = 0.5;
 val niter = 4;
 
 val pl = List.tabulate (ntarget, fn _ => zip_prog (randprog ()));
+
 val ((rl,scl),t1) = add_time (half_loop ncore 4 gtime []) pl; length rl;
 val (i1,sc1) = hd (dict_sort compare_rmin (number_fst 1 scl));
 val inputl = map (fn x => infts x ^ " " ^ rts (gtime * Real.fromInt niter)) pl;
