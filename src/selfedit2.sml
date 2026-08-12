@@ -535,23 +535,26 @@ end (* struct *)
 
 (*
 
+
 load "selfedit2"; open kernel aiLib selfedit2;
 
 
-val ncore = 10;
-val ntarget = 100;
-val gtime = 0.5;
-val niter = 4;
+
+val ncore = 64;
+val ntarget = 10240;
+val gtime = 0.1;
+val niter = 10;
+val expname = "hello4";
 
 val pl = List.tabulate (ntarget, fn _ => zip_prog (randprog ()));
 
-val ((rl,scl),t1) = add_time (half_loop ncore 4 gtime []) pl; length rl;
+val ((rl,scl),t1) = add_time (half_loop ncore niter gtime []) pl; length rl;
 val (i1,sc1) = hd (dict_sort compare_rmin (number_fst 1 scl));
 val inputl = map (fn x => infts x ^ " " ^ rts (gtime * Real.fromInt niter)) pl;
 val (outputl,t2) = add_time (parmap_sl ncore "selfedit2.score2f") inputl;
 val sc2 = stats outputl;
 
-val expname = "hello1"
+
 val expdir = selfdir ^ "/exp/" ^ expname
 val _ = mkDir_err expdir;
 
@@ -569,5 +572,8 @@ writel (expdir ^ "/result")
    " score " ^ rts_round 4 sc2 ^ 
    " in " ^ rts_round 2 t2 ^ " seconds"];
 
+val sl = readl (expdir ^ "/result");
+
+todo add priority : unsuperposed bucket > superposed bucket > finesse
 *)
 
