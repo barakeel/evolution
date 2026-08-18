@@ -23,8 +23,26 @@ fun ct n =
    -------------------------------------------------------------------------- *)
 
 (* helper *)
+
 fun sing r = ([r], 1)  
 val empty : obj = ([], 0)
+
+(* input *)
+val iv_glob = ref (Vector.fromList [empty])
+
+fun v0f fl (x,y) = (ct 1; Vector.sub (!iv_glob, 0))
+
+fun inputf fl = case fl of
+    [f] => (fn xy => 
+    let 
+      val _ = ct 10
+      val (l1,n1) = f xy 
+    in
+      case l1 of [] => empty | a :: m =>
+        Vector.sub (!iv_glob, a mod (Vector.length (!iv_glob)))
+    end
+    )
+  | _ => raise Msg "inputf"
 
 (* task *)
 val task_glob = ref empty
@@ -36,10 +54,10 @@ fun selff fl (x,y) = (ct 1; !self_glob)
 
 (* real *)
 fun binf tim oper fl = case fl of
-   [f1,f2] => (fn (x,y) => 
+   [f1,f2] => (fn xy => 
     let 
       val _ = ct tim
-      val ((l1,n1),(l2,n2)) = (f1 (x,y),f2 (x,y)) 
+      val ((l1,n1),(l2,n2)) = (f1 xy, f2 xy) 
     in 
       case (l1,l2) of 
         ([],_) => (l1,n1) 
@@ -48,6 +66,15 @@ fun binf tim oper fl = case fl of
     end)
   | _ => raise Msg "binf"
 
+fun unf tim oper fl = case fl of
+   [f] => (fn xy => 
+    let 
+      val _ = ct tim
+      val (l,n)= f xy
+    in 
+      case l of [] => (l,n) | a :: m => (oper a :: m, n)
+    end)
+  | _ => raise Msg "unf"
 
 val one = ([1], 1)
 fun onef fl (x,y) = (ct 1; one)
@@ -56,10 +83,18 @@ fun twof fl (x,y) = (ct 1; two)
 val ten = ([10], 1)
 fun tenf fl (x,y) = (ct 1; ten)
 
+val mone = ([~1], 1)
+fun monef fl (x,y) = (ct 1; mone)
+val mtwo = ([~2], 1)
+fun mtwof fl (x,y) = (ct 1; mtwo)
+val mten = ([~10], 1)
+fun mtenf fl (x,y) = (ct 1; mten)
+
+
 fun add x1 x2 = x1 + x2
 fun addf fl = binf 1 add fl
 fun diff x1 x2  = x1 - x2
-fun difff fl = binf 1 diff fl
+fun difff fl = unf 1 (op ~) fl
 fun mult x1 x2  = x1 * x2
 fun multf fl = binf 1 mult fl
 
@@ -150,7 +185,7 @@ val execl =
   (twof, "2", 0),
   (tenf, "10", 0),
   (addf, "+", 2),
-  (difff, "-", 2), 
+  (difff, "-", 1), 
   (multf, "mult", 2),
   (pop, "pop", 1), 
   (push, "push", 2), 
@@ -159,7 +194,8 @@ val execl =
   (yvar, "y", 0),
   (loop, "loop", 3),
   (loopl, "loopl", 3),
-  (cond, "cond", 3)
+  (cond, "cond", 3),
+  (inputf, "read", 1)
   ]
 
 val execv = Vector.fromList execl
@@ -242,7 +278,7 @@ fun unzip_prog i = unflatten_prog (unzip_il (Vector.length execv) i);
  
  
 fun bin_of_int n i = if n <= 0 then [] else
-  Real.fromInt (i mod 2) :: bin_of_int (n-1) (i div 2)  
+  i mod 2 :: bin_of_int (n-1) (i div 2)  
 fun bin_of_prog p = List.concat (map (bin_of_int 4) (flatten_prog p)); 
  
 (* --------------------------------------------------------------------------
@@ -301,7 +337,10 @@ fun run_elem n fv iv i =
   end
 
 fun run_once fv iv = 
-  let val n = Vector.length fv in
+  let 
+    val n = Vector.length fv 
+    val _ = iv_glob := iv
+  in
     Vector.tabulate (n, run_elem n fv iv)
   end
 
@@ -316,8 +355,8 @@ fun runl fvl iv = case fvl of [] => iv | fv :: m => runl m (run_once fv iv)
 fun count_neg iv = 
   let 
     val counter = ref 0
-    fun f x = case fst x of [] => () | a :: m => 
-      if a < 0 then incr counter else ()
+    fun f x = case fst x of [] => incr counter | a :: m => 
+      if a <= 0 then incr counter else ()
     val _ = Vector.app f iv
   in
     !counter
@@ -333,9 +372,9 @@ fun count_pos iv =
     !counter
   end
 
-fun score_obj obj fv iv = 
+fun score_obj obj fvl iv = 
   let 
-    val newiv = run 2 fv iv
+    val newiv = runl fvl iv
     val sc = if obj > 0 then count_pos newiv else count_neg newiv
   in
     (newiv,sc)
@@ -343,22 +382,24 @@ fun score_obj obj fv iv =
 
 fun iv_of_pobjl n pobjl = 
   let 
-    val pobjv = Vector.fromList pobjl 
+    val pobjv = Vector.fromList pobjl
     val m = Vector.length pobjv
   in
-    Vector.tabulate (n, fn i => ([Vector.sub (pobjv, i mod m)],1))
+    Vector.tabulate (n, fn i => 
+      if i mod (m+1) = m then empty else ([Vector.sub (pobjv, i mod (m+1))],1)
+      )
   end
 
-fun score_objl scl fv iv pobjl objl = case objl of 
-    [] => scl
+fun score_objl scl fvl iv pobjl objl = case objl of 
+    [] => rev scl
   | obj :: newobjl =>
     let
       val newpobjl = pobjl @ [obj]
-      val (_,sc: int) = score_obj obj fv iv 
+      val (_,sc: int) = score_obj obj fvl iv 
       val newiv = iv_of_pobjl (Vector.length iv) newpobjl
       val newscl = sc :: scl
     in
-      score_objl newscl fv newiv newpobjl newobjl
+      score_objl newscl fvl newiv newpobjl newobjl
     end
 
 (* --------------------------------------------------------------------------
@@ -367,38 +408,162 @@ fun score_objl scl fv iv pobjl objl = case objl of
 
 fun loss n x = if x <= 0 then 10000000.0 else 0.0 - Math.ln (int_div x n)
 
-fun hill_aux i imax (pv,sc) objl =
-  if i >= imax then pv else
+fun mutate_pv rate width pv = 
   let 
-    val n = Vector.length pv
-    val pv' = Vector.update (pv, random_int (0,n-1), randprog ());
-    val fv' = Vector.map mk_exec_safe pv';
-    val iv = Vector.tabulate (n, fn _ => empty)
-    val scl = score_objl [] fv' iv [] objl
-    val sc' = sum_real (map (loss n) scl)
+    val b = ref false
+    val r = Vector.tabulate (width, fn i => 
+      if random_real () < rate 
+      then (b := true; randprog ()) 
+      else Vector.sub (pv,i))
   in
-    if sc' < sc 
-    then (pe (its i ^ ": " ^ pretty_real sc' ^ " " ^ 
-          String.concatWith " " (map its scl)); 
-          hill_aux (i+1) imax (pv',sc') objl)
-    else hill_aux (i+1) imax (pv,sc) objl
+    if !b then r else mutate_pv rate width pv
   end
 
-fun hill n imax objl = 
+fun mutate_pvl rate width pvl = map (mutate_pv rate width) pvl
+
+fun hill_aux rate width i imax (pvl,sc) objl =
+  if i >= imax then pvl else
   let 
-    val pv = Vector.tabulate (n, fn _ => randprog ())
+    val pvl' = mutate_pvl rate width pvl
+    val fvl' = map (Vector.map mk_exec_safe) pvl';
+    val iv = Vector.tabulate (width, fn _ => empty)
+    val scl = score_objl [] fvl' iv [] objl
+    val sc' = sum_real (map (loss width) scl)
+  in
+    if sc' <= sc + epsilon 
+    then (
+         if sc' < sc then pe (its i ^ ": " ^ pretty_real sc' ^ " " ^ 
+           String.concatWith " " (map its scl)) else (); 
+           hill_aux rate width (i+1) imax (pvl',sc') objl
+         )   
+    else hill_aux rate width (i+1) imax (pvl,sc) objl
+  end
+
+fun hill rate depth width nepoch objl = 
+  let 
+    val pvl = List.tabulate (depth, 
+      fn _ => Vector.tabulate (width, fn _ => randprog ()))
     val sc = 10000000.0
   in
-    hill_aux 0 imax (pv,sc) objl
+    hill_aux rate width 0 nepoch (pvl,sc) objl
   end
+  
+(* --------------------------------------------------------------------------
+   Reading some token prediction data
+   most significant bits first in quartet.
+   -------------------------------------------------------------------------- *)
+  
+fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
+  handle HOL_ERR _ => raise Msg (Char.toString c ^ ": " ^ s)  
+  
+fun id_of_gpt s = 
+  let val n = Char.ord (valOf (Char.fromString s)) in n - 65 end
+
+fun tokenl_of_gpt s = 
+  let val sl = String.tokens Char.isSpace s in map id_of_gpt sl end
+
+fun read_line_aux acc il = case il of [] => List.concat (rev acc) | i :: m => 
+  read_line_aux (bin_of_int 4 i :: acc) m
+
+fun bitl_of_tokenl il = read_line_aux [] il
+
+fun read_oeis () = 
+  let
+    val (sl0,t) = 
+      add_time readl (selfdir ^ "/../../oeis-synthesis/src/data/oeis_smallprog")
+    val _ = pe ("reading time: " ^ rts_round 2 t)
+    val (sl1,t) = add_time (map (snd o (split_pair #":"))) sl0
+    val _ = pe ("splitting time: " ^ rts_round 2 t)
+    val (sl2,t) = add_time (map tokenl_of_gpt) sl1
+    val _ = pe ("token time: " ^ rts_round 2 t)
+  in
+    sl2
+  end  
   
 end (* struct *)
 
 (*
+val oeis = read_oeis ();
+val targetl = bitl_of_tokenl (random_elem oeis); length targetl;
 
 load "circle"; open kernel aiLib circle;
 
-val (r,t) = add_time (hill 100) 1000000;
+val targetl =
+   [0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0,
+    0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0,
+    0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1];
+
+val targetl = [0,1,1,0,0,1,1,0,1,0,1,0,1,1,1,1];
+
+val (r,t) = add_time (hill 0.0007 8 100 100000) targetl;
+
+(* statistics for each tokens *)
+
+fun flatten_prog ptop =
+  let 
+    val r = ref [] 
+    fun loop (Ins (id,pl)) = (r := id :: !r; app loop pl)
+  in 
+    loop ptop; rev (!r)
+  end;
+  
+val pvl = r;
+val pl = List.concat (map vector_to_list pvl);
+
+pe (string_of_prog (random_elem pl));
+val ill = map flatten_prog pl ;
+val ill1 = filter (fn x => mem 14 x) ill; length ill1;
+
+val d = count_dict (dempty Int.compare) il;
+val r = dlist d;
+
+token based? 16 x 10 = 160val ill1 = filter (fn x => mem 14 x) ill; length ill1;
+
+swapping when it does not improve
+
+
+val execl = ["1",
+  [
+  0 (onef, "1", 0),
+  (twof, "2", 0),
+  (tenf, "10", 0),
+  3 (addf, "+", 2),
+  (difff, "-", 1), 
+  (multf, "mult", 2),
+  6 (pop, "pop", 1), 
+  (push, "push", 2), 
+  (interleave, "inter", 2),
+  9 (xvar, "x", 0),
+  (yvar, "y", 0),
+  (loop, "loop", 3),
+  12 (loopl, "loopl", 3),
+  (cond, "cond", 3),
+  (inputf, "read", 1)
+  ]
+
+94592: 5.178036 26 25 34 28 27 28 31 26 37 25 38 19 34 34 32 26 (without read)
+
+
+
+(* correlate 2-layer 0.01 *)
+9692: 4.950265 55 54 53 55 52 55 55 52
+99730: 3.786887 61 56 69 56 53 75 60 72
+
+(* uncorrelated 1-layer 0.01 0.02 *)
+98264: 3.662129 62 56 63 64 61 67 66 68
+95040: 4.024111 62 58 60 61 57 62 62 62
+
+(* uncorrelated 2-layer 0.01 *)
+9960: 4.952248 51 53 55 50 49 55 56 63
+99116: 3.234777 68 57 64 66 61 72 75 73
+974433: 2.188772 72 65 74 74 69 80 89 89
+
+(* uncorrelated 3-layer 0.01 *)
+99660: 3.318216 67 58 64 67 60 69 75 70
+986679: 2.221221 75 67 71 75 67 81 90 83
+
+
+
 
 
 

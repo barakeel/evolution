@@ -15,6 +15,8 @@ sig
   val mk_exec_safe : kernel.prog -> exec
   
   (* objectives *)
-  val hill : int -> int -> int list ->  kernel.prog vector
+  val hill : real -> int -> int -> int -> int list ->  kernel.prog vector list
+  val read_oeis : unit -> int list list
+  val bitl_of_tokenl : int list -> int list
   
 end
