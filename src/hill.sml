@@ -211,7 +211,7 @@ fun run_para ncore exps exl (width,depth,rtmax) =
     val _ = init_exp exps exl
     fun f i = cws [its width, its depth, rts rtmax, its i, !expname, "true"];
     val sl = List.tabulate (ncore, f);
-    val slout =  parmap_sl ncore "hill.hill_para" sl
+    val slout =  parmap_sl ncore "hill.hill" sl
   in 
     writel (log_file ()) ["loss: " ^ hd slout];
     end_workers ncore;
@@ -224,7 +224,7 @@ fun run_test ncore exps exl wdtl =
     fun f i (width,depth,rtmax) = 
       cws [its width, its depth, rts rtmax, its i, exps, "false"];
     val sli = mapi f wdtl;
-    val slo =  parmap_sl ncore "hill.hill_para" sli
+    val slo =  parmap_sl ncore "hill.hill" sli
   in
     writel (log_file ()) ["loss: " ^ cws slo];
     end_workers ncore;
@@ -236,13 +236,6 @@ end (* struct *)
 (*
 
 load "hill"; open kernel aiLib prog hill;
-
-val ill = read_oeis ();
-val ill10 = random_subset 10 ill;
-
-val bll10 = map binl_of_idl ill10; map length bll10;
-PolyML.print_depth 200;
-bll10;
 
 val bll10 =
    [[1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0,
@@ -290,8 +283,7 @@ val bll10 =
     [1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1,
      1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1,
      1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0,
-     0, 0, 0, 0, 1, 0, 0, 1]]: int list list;
-
+     0, 0, 0, 0, 1, 0, 0, 1]];
 
 val targetl1 =
    [0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0,
@@ -299,14 +291,16 @@ val targetl1 =
     0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1];
 
 val targetl2 = [0,1,1,0,0,1,1,0,1,0,1,0,1,1,1,1];
-val (width,depth,rtmax) = (200,8,100.0);
 
+
+val (width,depth,rtmax) = (200,8,100.0);
 val r = run_single (width,depth,rtmax) [targetl1,targetl2];
 
+
+val (width,depth,rtmax) = (200,8,100000.0);
 val ncore = 64;
 val exps = "bll10";
-
-val r = run_para ncore exps [targetl1,targetl2] (width,depth,rtmax);
+val r = run_para ncore exps bll10 (width,depth,rtmax);
 
 
 
@@ -315,3 +309,15 @@ val r = run_test ncore exps targetl wdtl;
 
 *)
 
+
+(*
+
+load "hill"; open kernel aiLib prog hill;
+
+val ill = read_oeis ();
+val ill10 = random_subset 10 ill;
+
+val bll10 = map binl_of_idl ill10; map length bll10;
+PolyML.print_depth 200;
+bll10;
+*)
