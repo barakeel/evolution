@@ -2,8 +2,9 @@ structure kernel :> kernel =
 struct
 
 open HolKernel Abbrev boolLib aiLib dir
-val ERR = mk_HOL_ERR "kernel"
-               
+
+exception Msg of string;       
+
 val selfdir = dir.selfdir 
 
 (* -------------------------------------------------------------------------
@@ -41,68 +42,34 @@ fun ereml kl d = foldl (uncurry erem) d kl;
 fun dreml kl d = foldl (uncurry drem) d kl;
 
 (* -------------------------------------------------------------------------
-   Other tools
+   String tools
    ------------------------------------------------------------------------- *)
-
-val pe = print_endline
-
-fun range (a,b,f) = List.tabulate (b-a+1,fn i => f (i+a));
-
-fun subsets_of_size_aux n (l,ln) = 
-  if n > ln then [] else if n = ln then [l] else
-  (
-  case l of
-    [] => if n = 0 then [[]] else []
-  | a :: m => 
-    let
-      val l1 = map (fn subset => a::subset) 
-        (subsets_of_size_aux (n - 1) (m,ln-1))
-      val l2 = subsets_of_size_aux n (m,ln-1)
-    in
-      l1 @ l2
-    end  
-  )
-
-fun subsets_of_size n l =  subsets_of_size_aux n (l, length l)
 
 val infts = IntInf.toString
 val stinf = valOf o IntInf.fromString
 val streal = valOf o Real.fromString 
 val stint = string_to_int
-
 fun ilts il = String.concatWith " " (map its il)
 fun stil s = map string_to_int (String.tokens Char.isSpace s)
 
-fun inv_cmp cmp (a,b) = cmp (b,a)
-
-fun string_of_var x = fst (dest_var x) 
-  handle HOL_ERR _ => raise ERR "string_of_var" (term_to_string x)
-
-fun length_geq l n = length (first_n n l) >= n
-fun length_eq l n = case l of 
-    [] => n = 0 
-  | a :: m => length_eq m (n-1)
-
-fun first_diff cmp l1 l2 = case (l1,l2) of
-    ([],_) => NONE
-  | (_,[]) => NONE
-  | (a1 :: m1, a2 :: m2) => if cmp (a1,a2) = EQUAL 
-                            then first_diff cmp m1 m2
-                            else SOME (a1,a2);
-
-fun compare_term_size (tm1,tm2) = 
-  cpl_compare Int.compare Term.compare 
-    ((term_size tm1,tm1),(term_size tm2, tm2))
+val pe = print_endline
+val cws = String.concatWith " "
+val tws = String.tokens Char.isSpace
 
 fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
-  handle HOL_ERR _ => raise ERR "split_pair" (Char.toString c ^ ": " ^ s)
+  handle HOL_ERR _ => raise Msg ("split_pair: " ^ Char.toString c ^ " " ^ s)
+
+(* -------------------------------------------------------------------------
+   Other tools
+   ------------------------------------------------------------------------- *)
+
+fun range (a,b,f) = List.tabulate (b-a+1,fn i => f (i+a));
 
 (* -------------------------------------------------------------------------
    Program
    ------------------------------------------------------------------------- *)
 
-type id = int
-datatype prog = Ins of (id * prog list);
+datatype prog = Ins of (int * prog list);
 
 fun prog_compare (Ins(s1,pl1),Ins(s2,pl2)) =
   cpl_compare Int.compare (list_compare prog_compare) ((s1,pl1),(s2,pl2))
@@ -120,12 +87,9 @@ fun prog_compare_size (p1,p2) =
 
 fun all_subprog (p as Ins (_,pl)) = p :: List.concat (map all_subprog pl)
 
-fun all_subcompr (Ins (id,pl)) =
-  (if id = 12 then [hd pl] else []) @ List.concat (map all_subcompr pl)
-
 (* -------------------------------------------------------------------------
-   General parallelizer for function : unit -> string -> string
-   as long as the function can be named
+   Parallelizer for functions of the type : unit -> string -> string
+   as long as the function is named in a signature ".sig".
    ------------------------------------------------------------------------- *)
 
 fun write_string file s = writel file [s]
