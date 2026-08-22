@@ -16,6 +16,7 @@ sig
   
   (* hill climbing *)
   val hill : param -> prognx -> prognx
+  val hill_para : string -> string
   
   (* wrappers *)
   val run_single : (int * int * real) -> ex list -> prognx
