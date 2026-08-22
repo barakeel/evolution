@@ -128,7 +128,7 @@ fun parmap_sl ncore funname sl =
     val dir = selfdir ^ "/exp/reserved_stringspec"
     val _ = app mkDir_err [(selfdir ^ "/exp"), dir]
     val _ = smlExecScripts.buildheap_options :=  "--maxheap " ^ its 
-      (string_to_int (dfind "search_memory" configd) handle NotFound => 12000) 
+      (string_to_int (dfind "search_memory" configd) handle NotFound => 5000) 
     val _ = stringspec_funname_glob := funname
     val _ = smlExecScripts.buildheap_dir := dir
     val slo = smlParallel.parmap_queue_extern ncore stringspec () sl
