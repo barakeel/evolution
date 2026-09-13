@@ -3,6 +3,16 @@ struct
 
 open HolKernel aiLib kernel sexp exec
 
+fun contain_id id (Ins(x,pl)) = id = x orelse exists (contain_id id) pl
+
+val loopid = get_id "loop" 
+
+fun contain_id_fo id (Ins(x,pl)) = 
+  if id = x then true else 
+  let val pl' = if x = loopid then tl pl else pl in
+    exists (contain_id_fo id) pl'
+  end
+
 (* --------------------------------------------------------------------------
    Program representations from ast: int list, bool list, intinf, sexp
    -------------------------------------------------------------------------- *)
@@ -89,22 +99,34 @@ fun binl_of_prog p = List.concat (map (binl_of_int 4) (flatten_prog p));
 (* --------------------------------------------------------------------------
    Random program
    -------------------------------------------------------------------------- *)
+ 
+val readid = get_id "read" 
+(* val readiid = get_id "readi" *)
    
-val arityl = List.tabulate (Vector.length execv, fn i => (i, get_arity i))
+val arityl = (* filter (fn x => fst x <> readid) *) 
+  (List.tabulate (Vector.length execv, fn i => (i, get_arity i)))
 val arityl0 = map fst (filter (fn x => snd x = 0) arityl)
 val aritylpos = filter (fn x => snd x > 0) arityl
 
-fun random_prog_size n = 
-  if n <= 1 then Ins (random_elem arityl0, []) else
+val constl = List.tabulate (6, fn i => (i, get_arity i))
+val constl0 = map fst (filter (fn x => snd x = 0) arityl)
+val constlpos = filter (fn x => snd x > 0) arityl
+
+fun random_prog_size b n = 
+  if n <= 1 then Ins (random_elem (if b then constl0 else arityl0), []) else
   let
-    val candl = filter (fn x => snd x <= n - 1) aritylpos 
-    val (opern,arity) = random_elem candl
+    val candl = filter (fn x => snd x <= n - 1) 
+      (if b then constlpos else aritylpos) 
+    val (id,arity) = 
+      if null candl 
+      then (random_elem (if b then constl0 else arityl0), 0)
+      else random_elem candl
     val l = random_elem (number_partition arity (n - 1))
   in
-    Ins (opern, map random_prog_size l)
+    Ins (id, map (random_prog_size false) l)
   end   
  
-fun random_prog () = random_prog_size (random_int (5,20)); 
+fun random_prog () = random_prog_size false (random_int (5,20)); 
 
 (* --------------------------------------------------------------------------
    Reading OEIS programs

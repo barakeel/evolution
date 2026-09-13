@@ -32,6 +32,7 @@ sig
   val stil : string -> int list
   val ilts : int list -> string
   val split_pair : char -> string -> string * string
+  val rts_pad : int -> real -> string
   
   (* list tools *)
   val range : int * int * (int -> 'a) -> 'a list

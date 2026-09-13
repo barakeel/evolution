@@ -2,15 +2,19 @@ signature exec =
 sig
 
   type prog = kernel.prog
-  type obj = int list * int
+  type obj = int
   type exec = obj * obj -> obj
   
   (* default object *)
-  val empty : obj
+  val default : obj
   
   (* memory access *)
-  val iv_glob : obj vector ref
-  val xres_glob : obj ref
+  val iv_glob : obj ref vector ref
+  val z_glob : obj ref
+  val xprev_glob : obj ref
+  val access_glob : int list ref
+  val access : bool -> obj ref vector * int -> obj
+  val self_glob : int ref
   
   (* global runtime *)
   val run_time : int ref

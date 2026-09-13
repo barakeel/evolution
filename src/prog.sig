@@ -3,6 +3,10 @@ sig
 
   type prog = kernel.prog
 
+  (* program test *)
+  val contain_id : int -> prog -> bool
+  val contain_id_fo : int -> prog -> bool
+
   (* id list representation *)
   val flatten_prog : prog -> int list
   val unflatten_prog : int list -> prog
@@ -21,7 +25,7 @@ sig
   val binl_of_prog : prog -> int list
    
   (* random *)
-  val random_prog_size : int -> prog
+  val random_prog_size : bool -> int -> prog
   val random_prog : unit -> prog
 
   (* oeis *)

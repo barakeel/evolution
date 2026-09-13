@@ -3,14 +3,16 @@ struct
 
 open HolKernel aiLib kernel sexp
 
-type obj = int list * int
+type obj = int
 type exec = obj * obj -> obj
 
 (* --------------------------------------------------------------------------
    Default object
    -------------------------------------------------------------------------- *)
 
-val empty : obj = ([], 0)
+val default = 0
+
+val dep_flag = ref false
 
 (* --------------------------------------------------------------------------
    Timer
@@ -26,49 +28,62 @@ fun ct n =
    Implementation of primitives
    -------------------------------------------------------------------------- *)
 
-(* read from current layer *)
-val iv_glob = ref (Vector.fromList [empty])
-val xres_glob = ref empty
-fun xresf fl = fn xy => (ct 1; !xres_glob)
+val z_glob = ref default
+fun zf fl = fn xy => (ct 1; !z_glob)
 
-fun inputf fl = case fl of
+val xprev_glob = ref default
+fun xprevf fl = fn xy => (ct 1; !xprev_glob)
+
+val access_glob = ref []
+fun access b (iv,i) = 
+  (
+  if !dep_flag andalso b andalso not (mem i (!access_glob)) 
+  then access_glob := i :: !access_glob else ();
+  ! (Vector.sub (iv, i))
+  )
+
+
+(* read from previous layer *)
+val iv_glob = ref (Vector.fromList [ref default])
+fun readf fl = case fl of
     [f] => (fn xy => 
-    let 
-      val _ = ct 10
-      val (l1,n1) = f xy 
-    in
-      case l1 of [] => empty | a :: m =>
-        Vector.sub (!iv_glob, a mod (Vector.length (!iv_glob)))
-    end
+    (ct 10; access true (!iv_glob, f xy mod (Vector.length (!iv_glob))))
     )
-  | _ => raise Msg "inputf"
+  | _ => raise Msg "readf"
+
+val self_glob = ref 0
+
+fun readif fl = case fl of
+    [f] => (fn xy => 
+    (ct 10; access true (!iv_glob, (!self_glob + f xy) mod (Vector.length (!iv_glob))))
+    )
+  | _ => raise Msg "readif"
+
+
+(* read from current layer *)
+(* 
+val ivc_glob = ref (Vector.fromList [ref default])
+val ivc_size = ref
+fun readcf fl = case fl of
+    [f] => (fn xy => 
+    (ct 10; ! (access (!ivc_glob, f xy mod (Vector.length (!ivc_glob)))))
+    )
+  | _ => raise Msg "readcf"
+*)
+
 
 (* arithmetical operations *)
-fun constf c fl = (fn xy => (ct 1; ([c],1)))
+fun constf c fl = (fn xy => (ct 1; c))
 
 fun unf tim oper fl = case fl of
-   [f] => (fn xy => 
-    let 
-      val _ = ct tim
-      val (l,n)= f xy
-    in 
-      case l of [] => (l,n) | a :: m => (oper a :: m, n)
-    end)
+    [f] => (fn xy => (ct tim; oper (f xy)))
   | _ => raise Msg "unf"
 
 fun binf tim oper fl = case fl of
-   [f1,f2] => (fn xy => 
-    let 
-      val _ = ct tim
-      val ((l1,n1),(l2,n2)) = (f1 xy, f2 xy) 
-    in 
-      case (l1,l2) of 
-        ([],_) => (l1,n1) 
-      | (_,[]) => (l1,n1) 
-      | (a1 :: b1, a2 :: b2) => (oper a1 a2 :: b1, n1)
-    end)
+    [f1,f2] => (fn xy => (ct tim; oper (f1 xy) (f2 xy))) 
   | _ => raise Msg "binf"
 
+val zerof = constf 0
 val onef = constf 1
 val twof = constf 2
 val tenf = constf 10
@@ -78,80 +93,24 @@ fun diff x1 x2  = x1 - x2
 fun difff fl = unf 1 (op ~) fl
 fun mult x1 x2  = x1 * x2
 fun multf fl = binf 1 mult fl
-
-(* list *)
-fun nullf fl (x,y) = (ct 1; empty)
-
-fun lpop (l,n) = case l of [] => empty | a :: m => (m,n-1)
-
-fun pop fl = case fl of 
-    [f] => (fn (x,y) => (ct 1; lpop (f (x,y))))
-  | _ => raise Msg "pop"
-
-fun lpush a (m,n) = if n+1 > !timelimit then raise Check else (a :: m,n+1)
-fun push fl = case fl of
-   [f1,f2] => (fn (x,y) => 
-    (
-    ct 1; 
-    let val ((l1,n1),(l2,n2)) = (f1 (x,y),f2 (x,y)) in 
-      case l1 of a :: _ => lpush a (l2,n2) | _ => (l2,n2)
-    end
-    ))
-  | _ => raise Msg "push"
-
-fun interleave_aux1 l1 l2 = case (l1,l2) of
-    ([],_) => l2
-  | (_,[]) => l1
-  | (a1 :: m1, a2 :: m2) => a1 :: a2 :: interleave_aux1 m1 m2
-
-fun interleave_aux2 (l1,n1) (l2,n2) = 
-  if n1 + n2 > !timelimit then raise Check else (interleave_aux1 l1 l2, n1+n2)
-  
-fun interleave fl = case fl of
-   [f1,f2] => (fn xy => 
-     let val ((l1,n1),(l2,n2)) = (f1 xy, f2 xy) in 
-       (ct (n1+n2+1); interleave_aux2 (l1,n1) (l2,n2))
-     end)
-  | _ => raise Msg "push"
+fun modu x1 x2 = x1 mod x2
+fun modf fl = binf 5 modu fl
+fun divi x1 x2 = x1 div x2
+fun divf fl = binf 5 divi fl
 
 (* control flow *)
 fun xvar fl (x,y) = (ct 1; x)
 fun yvar fl (x,y) = (ct 1; y)
 
 fun loop_aux f x xmax y =
-  (
-  ct 1; 
-  if x >= xmax then y else loop_aux f (x+1) xmax (f (([x],1),y))
-  )
-
-fun loop_aux2 f x y = 
-  (
-  ct 1;
-  case fst x of [] => y | xmax :: _ => loop_aux f 0 xmax y
-  )
+  (ct 1; if x >= xmax then y else loop_aux f (x+1) xmax (f (x,y)))
 
 fun loop fl = case fl of
-    [f1,f2,f3] => (fn xy => (ct 1; loop_aux2 f1 (f2 xy) (f3 xy)))
+    [f1,f2,f3] => (fn xy => (ct 1; loop_aux f1 0 (f2 xy) (f3 xy)))
   | _ => raise Msg "loop"
 
-fun loopl_aux f x y = 
-   (
-   ct 1;
-   case x of ([],_) => y | (a :: m,n) => loopl_aux f (m,n-1) (f (x,y))
-   )
-
-fun loopl fl = case fl of
-    [f1,f2,f3] => (fn xy => (ct 1; loopl_aux f1 (f2 xy) (f3 xy)))
-  | _ => raise Msg "loopl"
-
 fun cond fl = case fl of
-    [f1,f2,f3] => (fn xy => 
-    (
-    ct 1; 
-    case f1 xy of ([],_) => f3 xy | (x :: m,_) => 
-      if x > 0 then f2 xy else f3 xy
-    )
-    )
+    [f1,f2,f3] => (fn xy => (ct 1; if f1 xy > 0 then f2 xy else f3 xy))
   | _ => raise Msg "cond"
 
 (* --------------------------------------------------------------------------
@@ -162,16 +121,16 @@ val execl =
   [
   (onef, "1", 0),(twof, "2", 0),(tenf, "10", 0),
   (addf, "+", 2),(difff, "-", 1), (multf, "mult", 2),
-  (pop, "pop", 1),(push, "push", 2), (interleave, "inter", 2),
+  (* (zerof,"0",0), *) (* (modf, "mod",2), (divf, "div", 2), *)
   (xvar, "x", 0),(yvar, "y", 0),
-  (loop, "loop", 3),(loopl, "loopl", 3),(cond, "cond", 3),
-  (inputf, "read", 1),(xresf, "xres", 1)
+  (loop, "loop", 3),(cond, "cond", 3),
+  (readf, "read", 1), (zf, "z", 0) (* , (readif, "readi", 1) *)
   ]
 
 val execv = Vector.fromList execl
 val execd = dnew String.compare (number_snd 0 (map #2 execl))
 
-val _ = if Vector.length execv > 16 then raise Msg "execv" else ()
+val _ = if Vector.length execv >= 16 then raise Msg "execv" else ()
 
 fun get_fun n = #1 (Vector.sub (execv,n))
 fun get_name n = #2 (Vector.sub (execv,n))
@@ -186,7 +145,9 @@ val run_time = ref 0
 fun mk_exec_safe p = 
   let val f = mk_exec p in 
     fn x => 
-      let val r = (timer := 0; f x handle Overflow => empty | Check => empty) in
+      let val r = (timer := 0; f x 
+   handle Div => default | Overflow => default | Check => default) 
+      in
         run_time := !timer + !run_time; r
       end
   end
