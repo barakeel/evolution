@@ -4,11 +4,17 @@ struct
 open HolKernel aiLib kernel sexp exec prog
 
 type 'a net = 'a vector vector
-type cache = (int ref * int list ref * int list ref) net * (int * int)) list
+type cache = ((int ref * int list ref * int list ref) net * (int * int)) list
 type pfn = (prog ref * exec ref) net
 type pn = cache * pfn
 type pnx = pn * real * int
-type ex = (int ref vector * (int * int)) list
+type ex = (int vector * (int * int)) list
+
+fun debugf f = if !debug_flag then pe (f ()) else ()
+
+val cache_glob = ref ([]:cache)
+val exi_glob = ref 0
+val node_counter = ref 0
 
 fun width_of_net net = Vector.length (Vector.sub (net,0))
 fun depth_of_net net = Vector.length net
@@ -24,18 +30,18 @@ fun pn_compare (pn1,pn2) =
    -------------------------------------------------------------------------- *)
 
 fun add_edge cache (d,w) wi = 
-  let val (_,_,outgoing) = Vector.sub (Vector.sub (cache, d - 1),wi) in
-    if mem w outgoing then () else outgoing := w :: outgoing
+  let val (_,_,outgoing) = Vector.sub (Vector.sub (cache,d),wi) in
+    if mem w (!outgoing) then () else outgoing := w :: (!outgoing)
   end
 
 fun rm_edge cache (d,w) wi =
-  let val (_,_,outgoing) = Vector.sub (Vector.sub (cache,d - 1),wi) in
-    outgoing := filter (fn x => x <> w) outgoing
+  let val (_,_,outgoing) = Vector.sub (Vector.sub (cache,d),wi) in
+    outgoing := filter (fn x => x <> w) (!outgoing)
   end
 
 fun update_depl cache (d,w) depl =
   let 
-    val (_,incoming,_) = Vector.sub (Vector.sub (cache,d),w) 
+    val (_,incoming,_) = Vector.sub (Vector.sub (cache,d+1),w) 
     val olddepl = !incoming  
   in
     incoming := depl;
@@ -75,31 +81,56 @@ fun read_pnx file =
 *)
 
 (* --------------------------------------------------------------------------
-   Run program networks
+   Run program networks: programs have same depth index as their input.
    -------------------------------------------------------------------------- *)
 
-fun run_node width fv iv i =
+fun s13 (a,b,c) = a
+fun s33 (a,b,c) = c
+fun get_ref iv i = s13 (Vector.sub (iv, i))
+fun get_value iv i = ! (get_ref iv i)
+
+fun print_cache_one (di,iv) =   
+  pe ("layer " ^ its di ^ ": " ^ ilts (map (! o s13) (vector_to_list iv)))
+      
+fun print_cache cache = Vector.appi print_cache_one cache
+
+fun run_node di width fv iv i =
   let
-    val (_,fref) = Vector.sub (fv, i)
-    val i1 = Vector.sub (iv, (i - 1) mod width)       
-    val i2 = Vector.sub (iv, (i + 1) mod width)
-    val _ = z_glob := Vector.sub  (iv, i)
+    val (pref,fref) = Vector.sub (fv, i)
+    val i1 = get_value iv ((i - 1) mod width)       
+    val i2 = get_value iv ((i + 1) mod width)
+    val _ = z_glob := get_value iv i
+    val r = (!fref) (i1,i2)
+    val cache = fst (List.nth (!cache_glob, !exi_glob))
+    val (r',_,_) = Vector.sub (Vector.sub (cache,di+1),i)
   in
-    (!fref) (i1,i2)
+    if !r' = r then r else
+    (
+    pe ( 
+       "node " ^ its di ^ " " ^ its i ^ "\n" ^
+       "program: " ^ string_of_prog (!pref) ^ "\n" ^
+       "input: x " ^ its i1 ^ " y "  ^ its i2 ^ " z " ^ its (!z_glob) ^ "\n" ^
+       "output: " ^ its r ^ " does not match cache " ^ its (!r'))
+    ;
+    print_endline "cache";
+    print_cache cache;
+    raise Msg "mismatch"
+    )   
   end
 
-fun run_layer fv iv = 
+fun run_layer di fv iv = 
   let
     val width = Vector.length fv 
-    val _ = iv_glob := Vector.map ref iv
-    val r = Vector.tabulate (width, run_node width fv iv)
+    val _ = iv_glob := Vector.map (fn x => (ref x, ref [], ref [])) iv
+    val _ = debug ("layer " ^ its di ^ ": " ^ ilts (vector_to_list iv))
+    val r = Vector.tabulate (width, run_node di width fv (!iv_glob))
   in
     r
   end
 
 fun runl_aux pn di dmax iv = 
   if di >= dmax then iv else
-  runl_aux pn (di + 1) dmax (run_layer (Vector.sub (pn,di)) iv)
+  runl_aux pn (di + 1) dmax (run_layer di (Vector.sub (pn,di)) iv)
 
 fun runl pn iv = runl_aux pn 0 (depth_of_net pn) iv
 
@@ -116,39 +147,31 @@ fun count iv =
     (!neg,!pos)
   end
 
-fun score_obj pn (iv,obj) = 
+fun score_obj pn exi (iv,obj) = 
   let 
+    val _ = exi_glob := exi
     val newiv = runl pn iv
+    val _ = debugf (fn () => "output: " ^ ilts (vector_to_list newiv))
     val (neg,pos) = count newiv
     val sc = if obj > 0 then pos else neg 
   in
     sc
   end
 
-fun iv_of_objl n objl = 
-  let 
-    val pobjv = Vector.fromList (1 :: 1 :: 1 :: 1 :: rev objl)
-    val m = Vector.length pobjv
-    fun f i = Vector.sub (pobjv, i mod m)
-  in
-    Vector.tabulate (n,f)
-  end
-
 fun logit n x = if x <= 0 then 100000000.0 else 0.0 - Math.ln (int_div x n)
 
-fun score_exone pfn (iv,(obj,_)) = score_obj pfn (Vector.map ! iv, obj)
+fun score_exone pfn exi (iv,(obj,_)) = score_obj pfn exi (iv, obj)
   
 fun infer_test pfn ex = 
   if null ex then raise Msg "infer_test: empty" else 
   let 
     val w = width_of_net pfn
-    val scl = map (score_exone pfn) ex
+    val scl = mapi (score_exone pfn) ex
     val sclpos = filter (fn x => x > w div 2) scl
     val acc = int_div (length sclpos) (length scl)
     val loss = sum_real (map (logit w) scl)
   in
-    pe ("test loss " ^ rts_round 3 loss ^ 
-        ", test accuracy " ^ rts_round 3 acc);
+    pe ("test loss " ^ rts_pad 3 loss ^ ", test acc " ^ rts_pad 3 acc);
     (loss, acc)
   end
 
@@ -163,29 +186,27 @@ fun all_suffixes objl = case objl of
 
 fun all_rev_prefixes objl = rev (all_suffixes (rev objl));
  
-fun iv_of_objl_ref w tokenpos objl = 
+fun iv_of_objl w tokenpos objl = 
   let 
     val obj = hd objl
     val objm = tl objl
-    val pobjv = Vector.fromList (1 :: 1 :: 1 :: 1 :: objm)
+    val pobjv = Vector.fromList (0 :: 1 :: 1 :: 1 :: objm)
     val m = Vector.length pobjv
-    fun f i = ref (Vector.sub (pobjv, i mod m))
+    fun f i = Vector.sub (pobjv, i mod m)
   in
     (Vector.tabulate (w,f), (obj,tokenpos))
   end  
 
 fun vol_of_sentencel w l = 
   let 
-    fun f ex = mapi (iv_of_objl_ref w) (all_rev_prefixes ex)
+    fun f ex = mapi (iv_of_objl w) (all_rev_prefixes ex)
     val r = List.concat (map f l)
   in  
     r
   end
 
 fun vol_of_exol exol = 
-  let fun f (inputl,output) = 
-    (Vector.fromList (map ref inputl), (output,0)) 
-  in
+  let fun f (inputl,output) = (Vector.fromList inputl, (output,0)) in
     map f exol
   end
  
@@ -193,8 +214,9 @@ fun vol_of_exol exol =
 fun cache_of_vol (d,w) vol =
   let
     val _ = pe (its (length vol) ^ " examples")
-    fun g v = Vector.tabulate (d+1, 
-      fn i => if i = 0 then v else Vector.tabulate (w, fn _ => ref 0))
+    fun g v = Vector.tabulate (d+1, fn i => 
+     Vector.tabulate (w, fn j => 
+      (ref (if i = 0 then Vector.sub (v,j) else 0) ,ref [],ref [])))
   in
     map_fst g vol
   end 
@@ -209,34 +231,27 @@ val x_id = get_id "x"
 val y_id = get_id "y"
 val z_id = get_id "z"
 
-fun runc_node pv (iv,ov) w wi =
+
+fun runc_node cache (d,w) pv (iv,ov) di wi =
   let
+    val _ = node_counter := !node_counter + 1
     val (pref,fref) = Vector.sub (pv, wi)
     val (p,f) = (!pref,!fref)
     val _ = if !dep_flag then access_glob := [] else ()
-    val i1 = !
-      (
-      if !dep_flag 
-      then access (contain_id_fo x_id p) iv ((wi - 1) mod w) 
-      else Vector.sub (iv, (wi - 1) mod w)
-      )   
-    val i2 = !
-      (
-      if !dep_flag 
-      then access (contain_id_fo y_id p) iv ((wi + 1) mod w) 
-      else Vector.sub (iv, (wi + 1) mod w)
-      ) 
-    val _ = z_glob := ! 
-      (
-      if !dep_flag 
-      then access (contain_id z_id p) iv wi 
-      else Vector.sub (iv,wi)     
-      )
+    val index1 = (wi - 1) mod w
+    val i1 = if !dep_flag then access (contain_id_fo x_id p) iv index1 else
+      get_value iv index1
+    val index2 = (wi + 1) mod w
+    val i2 = if !dep_flag then access (contain_id_fo y_id p) iv index2 else
+      get_value iv index2
+    val _ = z_glob := (if !dep_flag then access (contain_id z_id p) iv wi else     
+      get_value iv wi)
     val r = f (i1,i2)
-    val oref = Vector.sub (ov, wi)
+    val oref = get_ref ov wi
     val oold = !oref
     fun g () = oref := oold
     val _ = undol_glob := g :: !undol_glob
+    val _ = if !dep_flag then update_depl cache (di,wi) (!access_glob) else ()
   in
     oref := r
   end
@@ -246,28 +261,54 @@ fun runc_layer cache pn (d,w) di wil =
     val pv = Vector.sub (pn,di)
     val iv = Vector.sub (cache,di)
     val ov = Vector.sub (cache,di+1)
+    val _ = debugf (fn () => 
+      "layer " ^ its di ^ ": " ^ ilts (map (! o s13) (vector_to_list iv)))
     val _ = iv_glob := iv
+    val _ = app (runc_node cache (d,w) pv (iv,ov) di) wil
+    val _ = debugf (fn () => 
+      "edges " ^ its di ^ "-" ^ its (di+1) ^ ": " ^ 
+      String.concatWith "," (map (ilts o ! o s33) (vector_to_list iv)))
   in
-    app (runc_node pv (iv,ov) w) wil
+    ()
   end
-
-fun runcl_aux cache pn (d,w) di wil = 
+ 
+val nodep_flag = ref false 
+ 
+fun runcl_aux b cache pn (d,w) di wil = 
   if di >= d then () else
-  let 
-    val () = runc_layer cache pn (d,w) di wil 
-    val newwil = List.tabulate (w,I)  
+  let
+    val newwil = if b then List.tabulate (w,I) else 
+      let 
+        val ov = Vector.sub (cache,di+1)
+        fun dep_of wi = ! (s33 (Vector.sub (ov,wi)))
+      in
+        mk_fast_set Int.compare (List.concat (map dep_of wil))
+      end
+    val () = runc_layer cache pn (d,w) di wil
   in
-    runcl_aux cache pn (d,w) (di+1) newwil
+    runcl_aux b cache pn (d,w) (di+1) newwil
   end
 
 fun dim_of_net pn = (depth_of_net pn, width_of_net pn)
 
-fun runcl cache pn di wil = runcl_aux cache pn (dim_of_net pn) di wil
+fun output_layer cache = Vector.sub (cache, Vector.length cache - 1)
+
+fun runcl b cache pn di wil = 
+   let 
+     val _ = runcl_aux b cache pn (dim_of_net pn) di wil
+     val _ = debugf (fn () => 
+       "output: "  ^ ilts (map (! o s13) (vector_to_list (output_layer cache))))
+   in
+     ()
+   end
 
 fun update_cache_full (cachel,pfn) = 
   let val wil = List.tabulate (width_of_net pfn, I) in
-    app (fn x => runcl (fst x) pfn 0 wil) cachel
+    app (fn x => runcl true (fst x) pfn 0 wil) cachel
   end
+  
+fun update_cache (cachel,pfn) (di,wil) = 
+  app (fn x => runcl false (fst x) pfn di wil) cachel  
   
 (* --------------------------------------------------------------------------
    Initialization and updates
@@ -282,43 +323,53 @@ fun init_cache vol pfn =
     cache
   end
 
-fun update_cache (cache,pn) (di,wi) = 
-  app (fn x => runcl (fst x) pn di [wi]) cache
-
-fun update_pn pfn (p,di,wi) = 
+fun update_pn pn (p,di,wi) = 
   let 
-    val (pref,fref) = Vector.sub (Vector.sub (snd pfn,di), wi) 
+    val (pref,fref) = Vector.sub (Vector.sub (snd pn,di), wi) 
     val (pold,fold) = (!pref,!fref)
     fun f () = (pref := pold; fref := fold)
     val _ = undol_glob := f :: !undol_glob
     val _ = (pref := p; fref := mk_exec_safe p)
+    val _ = if !nodep_flag 
+            then update_cache_full pn 
+            else update_cache pn (di,[wi])
+    (*
+    val nc = !node_counter 
+    val nc' = !node_counter - nc
+    val (depth,width) = dim_of_net (snd pn)
+    val nex = length (fst pn)
+    *)
   in
-    update_cache_full pfn
+    (* pe ("nodes: " ^ its nc' ^ "/" ^ its (depth * width * nex)); *)
+    ()
   end
 
 (* --------------------------------------------------------------------------
    Scoring
    -------------------------------------------------------------------------- *)
 
-fun output_layer cache = Vector.sub (cache, Vector.length cache - 1)
 
-fun count_ref tokenpos ov = 
+fun input_layer cache = Vector.sub (cache, 0)
+
+fun count_ref ov = 
   let 
     val (neg,pos) = (ref 0,ref 0)
-    fun f (i,x) = if !x > 0 then incr pos else incr neg
+    fun f (i,x) = if ! (s13 x) > 0 then incr pos else incr neg
     val _ = Vector.appi f ov
   in
     (!neg,!pos)
   end
 
 fun score_cache_one (cache,(obj,tokenpos)) =
-  let 
+  let
+    val iv = input_layer cache
     val ov = output_layer cache 
-    val (neg,pos) = count_ref tokenpos ov
+    val (neg,pos) = count_ref ov
   in
     if obj > 0 then pos else neg
   end 
     
+(* todo: only recompute the score partially *)
 fun score_pn (cache,_) = 
   let
     val width = width_of_net (fst (hd cache))
@@ -330,135 +381,36 @@ fun score_pn (cache,_) =
 
 fun random_pnx (d,w) vol =
   let 
+    val _ = dep_flag := true
+    val _ = pe "init programs"
     fun f i = Vector.tabulate (w, fn _ => 
       let val p = random_prog () in (ref p, ref (mk_exec_safe p)) end 
       )
     val pfn = Vector.tabulate (d, f)
+    val _ = pe "init cache"
     val cache = init_cache vol pfn
     val pn = (cache,pfn)
     val loss1 = fst (score_pn pn)
+    val _ = undol_glob := []
+    val _ = pe ("loss cache: " ^ rts_pad 4 loss1)
+    val _ = pe "init infer"
+    val _ = cache_glob := cache
     val (loss2,acc2) = infer_test pfn vol
+    val _ = pe ("loss infer: " ^ rts_pad 4 loss2)
+    val _ = dep_flag := false
   in 
-    pe ("cached: " ^ rts_pad 2 loss1 ^ ", " ^  "plain: " ^ rts_pad 2 loss2);
     (pn, loss1, valOf (Int.maxInt))
   end
 
 end (* struct *)
 
-
-(* 
-load "network"; open aiLib kernel exec prog network;
-val targetl1 = [0,1,1,0,0];
-val targetl2 = [1,1,0];
-val width = 100;
-val vol = vol_of_sentencel width [targetl1, targetl2];
-
-PolyML.print_depth 10;
-val (pn,_,_) = random_pnx (8,width) vol;
-
-
-val (sc,scl) = score_cache cache;
-
-
-val access_line = ref []
-val access_network = ref []
-val obj_network = ref []
-
-
 (*
-val _ = self_glob := i
-  val _ = access_glob := []
-access_line := !access_glob :: !access_line; 
-  val _ = access_line := []
- val _ = obj_network := r :: !obj_network
- val _ = access_network := rev (!access_line) :: !access_network
-  *)
-  
- (* let 
-    val _ = access_network := []
-    val _ = obj_network := [iv]
-    val r =
-    val _ = access_network := rev (!access_network)
-    val _ = obj_network := rev (!obj_network)
-  in
-    r
-  end
- *)  
-    
-(* todo: improve the dependencies tracking *)
-
-
-val width = 40;
-val iv = iv_of_objl width targetl2;
-val (pnet,_,_) = random_pnx (width,4);
-
-val fnet = mk_fnet pvl;
-val r = runl fnet iv;
-
-
-
-fun mk_depv width accessl = 
-  let
-    val depv = Vector.tabulate (width, fn _ => ref ([]: int list))
-    fun update_dep (j,i)  = 
-      let val l = Vector.sub (depv,i) in l := j :: !l end;
-    val pairl = distrib ((number_fst 0) accessl)
-  in
-    app update_dep pairl;
-    depv
-  end;
-
-val depnetwork = map (mk_depv width) (!access_network);
-
-fun dep_of_aux depnetwork acc depl = case depnetwork of 
-    [] => rev acc 
-  | v :: m =>
-  let 
-    fun f x = ! (Vector.sub (v, x))
-    val newdepl = mk_fast_set Int.compare (List.concat (map f depl))
-  in
-    dep_of_aux m (newdepl :: acc) newdepl
-  end;
-  
-fun dep_of depnetwork x = dep_of_aux depnetwork [[x]] [x];
-
-val r = dep_of depnetwork 6;
-
-
-fun compute_fast p (wi,di) net = 
-  let
-    val node = Vector.sub (Vector.sub (net,di),wi) 
-    val f = mk_exec_safe p
-    val i1 = access b1 (iv, (i - 1) mod width)       
-    val i2 = access b2 (iv, (i + 1) mod width)
-    val _ = z_glob := access b3 (iv, i)
-    val output = #output node
-    val org = !output
-    fun restore () = output := org
-    
-  in
-    (restorel := restore :: restorel; output := f (#input node))
-  end
-
-depv;
-todo: modify a single node and only update the affected part of the network.
-!obj_network;
-
-0) update the program at position i
-1) look up the previous input and recompute the output for position i
-2) look up the dependencies on the second layer  
-3) recompute the dependencies on the second layer
-4) see if it would affect any relevant output (hard to say because they might need the results for later), maybe the last layer could be like that as it is not used but this is complicating things.
-
-
-
-
-
-
-
-
-pe (String.concatWith "\n" 
-  (map string_of_prog (first_n 10 (flatten_pvl pvl))));
+todo:  print cache with structre
+load "network"; open aiLib kernel exec prog network;
+val targetl1 = [0,1,1,0,0,1];
+val width = 10;
+val vol = vol_of_sentencel width [targetl1];
+debug_flag := true;
+val (_,_,_) = random_pnx (4,width) vol;
 
 *)
-

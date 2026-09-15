@@ -9,12 +9,15 @@ sig
   val default : obj
   
   (* memory access *)
-  val iv_glob : obj ref vector ref
+  val iv_glob: (obj ref * int list ref * int list ref) vector ref
   val z_glob : obj ref
   val xprev_glob : obj ref
-  val access_glob : int list ref
-  val access : bool -> obj ref vector * int -> obj
   val self_glob : int ref
+  
+  (* dependency tracking *)
+  val dep_flag : bool ref
+  val access_glob : int list ref
+  val access : bool -> (obj ref * int list ref * int list ref) vector -> int -> obj
   
   (* global runtime *)
   val run_time : int ref

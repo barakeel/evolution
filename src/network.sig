@@ -6,13 +6,15 @@ sig
   type prog = kernel.prog
   
   type 'a net = 'a vector vector
-  type cache = (int ref net * (int * int)) list
+  type cache = ((int ref * int list ref * int list ref) net * (int * int)) list
   type pfn = (prog ref * exec ref) net
   type pn = cache * pfn
   type pnx = pn * real * int
-  type ex = (int ref vector * (int * int)) list
+  type ex = (int vector * (int * int)) list
   
   val run_time : int ref
+  val node_counter : int ref  
+  val nodep_flag : bool ref
   
   val flatten_pn : pn -> prog list
   val pn_compare : pn * pn -> order
@@ -27,7 +29,6 @@ sig
   *)
 
   (* running a program network: todo package it *) 
-  val iv_of_objl : int -> obj list -> obj vector
   val runl : pfn -> obj vector -> obj vector
   val infer_test : pfn -> ex -> (real * real)
   
@@ -42,6 +43,7 @@ sig
     
   (* updating the network *)
   val undol_glob : (unit -> unit) list ref
+  val cache_glob : cache ref
   val init_cache : ex -> pfn -> cache
   val score_pn : pn -> (real * int list)
   val random_pnx : int * int -> ex -> pnx

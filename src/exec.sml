@@ -34,20 +34,26 @@ fun zf fl = fn xy => (ct 1; !z_glob)
 val xprev_glob = ref default
 fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 
+fun s13 (a,b,c) = a
+
 val access_glob = ref []
-fun access b (iv,i) = 
+fun access b iv i = 
   (
   if !dep_flag andalso b andalso not (mem i (!access_glob)) 
   then access_glob := i :: !access_glob else ();
-  ! (Vector.sub (iv, i))
+  ! (s13 (Vector.sub (iv, i)))
   )
 
 
 (* read from previous layer *)
-val iv_glob = ref (Vector.fromList [ref default])
+val iv_glob = ref 
+  (Vector.fromList [(ref 0, ref ([]: int list), ref ([]: int list))])
 fun readf fl = case fl of
     [f] => (fn xy => 
-    (ct 10; access true (!iv_glob, f xy mod (Vector.length (!iv_glob))))
+     (
+     ct 5; 
+     access true (!iv_glob) (f xy mod (Vector.length (!iv_glob)))
+     )
     )
   | _ => raise Msg "readf"
 
@@ -55,7 +61,8 @@ val self_glob = ref 0
 
 fun readif fl = case fl of
     [f] => (fn xy => 
-    (ct 10; access true (!iv_glob, (!self_glob + f xy) mod (Vector.length (!iv_glob))))
+    (ct 5; 
+     access true (!iv_glob) ((!self_glob + f xy) mod (Vector.length (!iv_glob))))
     )
   | _ => raise Msg "readif"
 
