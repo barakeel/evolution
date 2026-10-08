@@ -100,8 +100,8 @@ fun binl_of_prog p = List.concat (map (binl_of_int 4) (flatten_prog p));
    Random program
    -------------------------------------------------------------------------- *)
  
-val readid = get_id "read" 
-(* val readiid = get_id "readi" *)
+(* val readid = get_id "read"  *)
+val readiid = get_id "readi"
    
 val arityl = (* filter (fn x => fst x <> readid) *) 
   (List.tabulate (Vector.length execv, fn i => (i, get_arity i)))
@@ -123,7 +123,9 @@ fun random_prog_size b n =
       else random_elem candl
     val l = random_elem (number_partition arity (n - 1))
   in
-    Ins (id, map (random_prog_size false) l)
+    (* if id = readiid 
+    then Ins (id, map (random_prog_size true) l)
+    else *) Ins (id, map (random_prog_size false) l)
   end   
  
 fun random_prog () = random_prog_size false (random_int (5,20)); 

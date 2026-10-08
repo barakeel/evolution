@@ -6,15 +6,21 @@ sig
   type prog = kernel.prog
   
   type 'a net = 'a vector vector
-  type cache = ((int ref * int list ref * int list ref) net * (int * int)) list
-  type pfn = (prog ref * exec ref) net
+  type cache = ((int ref * int list ref * int list ref) net * 
+                (int * int * int ref)) list
+  type pfn = 
+    (prog ref * exec ref * (bool * bool * bool) option ref * int ref) net
   type pn = cache * pfn
   type pnx = pn * real * int
-  type ex = (int vector * (int * int)) list
+  type ex = (int vector * (int * int * int ref)) list
   
   val run_time : int ref
-  val node_counter : int ref  
-  val nodep_flag : bool ref
+  val node_counter : int ref 
+  val node_dep_counter : int ref
+  val fullupdate_flag : bool ref (* debug *)
+  
+  val mod_glob : int ref
+  val full_flag : bool ref
   
   val flatten_pn : pn -> prog list
   val pn_compare : pn * pn -> order

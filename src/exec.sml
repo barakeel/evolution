@@ -11,7 +11,6 @@ type exec = obj * obj -> obj
    -------------------------------------------------------------------------- *)
 
 val default = 0
-
 val dep_flag = ref false
 
 (* --------------------------------------------------------------------------
@@ -37,6 +36,7 @@ fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 fun s13 (a,b,c) = a
 
 val access_glob = ref []
+
 fun access b iv i = 
   (
   if !dep_flag andalso b andalso not (mem i (!access_glob)) 
@@ -44,10 +44,10 @@ fun access b iv i =
   ! (s13 (Vector.sub (iv, i)))
   )
 
-
 (* read from previous layer *)
 val iv_glob = ref 
   (Vector.fromList [(ref 0, ref ([]: int list), ref ([]: int list))])
+
 fun readf fl = case fl of
     [f] => (fn xy => 
      (
@@ -57,7 +57,9 @@ fun readf fl = case fl of
     )
   | _ => raise Msg "readf"
 
+
 val self_glob = ref 0
+
 
 fun readif fl = case fl of
     [f] => (fn xy => 
@@ -65,7 +67,6 @@ fun readif fl = case fl of
      access true (!iv_glob) ((!self_glob + f xy) mod (Vector.length (!iv_glob))))
     )
   | _ => raise Msg "readif"
-
 
 (* read from current layer *)
 (* 
@@ -131,7 +132,7 @@ val execl =
   (* (zerof,"0",0), *) (* (modf, "mod",2), (divf, "div", 2), *)
   (xvar, "x", 0),(yvar, "y", 0),
   (loop, "loop", 3),(cond, "cond", 3),
-  (readf, "read", 1), (zf, "z", 0) (* , (readif, "readi", 1) *)
+  (* (readf, "read", 1), *) (zf, "z", 0) , (readif, "readi", 1)
   ]
 
 val execv = Vector.fromList execl

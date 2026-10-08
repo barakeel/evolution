@@ -59,8 +59,12 @@ val tws = String.tokens Char.isSpace
 fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
   handle HOL_ERR _ => raise Msg ("split_pair: " ^ Char.toString c ^ " " ^ s)
 
-fun rts_pad n t = pad (n+2) "0" (rts_round n t)
-
+fun rts_pad n t =
+  let val n' = 
+    n + 1 + (if t < 10.0 then 1 else 1 + Real.floor (Math.log10 t)) 
+  in
+    pad n' "0" (rts_round n t)
+  end
 
 (* -------------------------------------------------------------------------
    Other tools
