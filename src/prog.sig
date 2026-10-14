@@ -3,9 +3,10 @@ sig
 
   type prog = kernel.prog
 
-  (* program test *)
+  (* collecting arguments *)
   val contain_id : int -> prog -> bool
   val contain_id_fo : int -> prog -> bool
+  val collect_readargl : prog -> int list
 
   (* id list representation *)
   val flatten_prog : prog -> int list
@@ -25,10 +26,11 @@ sig
   val binl_of_prog : prog -> int list
    
   (* random *)
-  val random_prog_size : bool -> int -> prog
   val random_prog : unit -> prog
 
   (* oeis *)
   val read_oeis : unit -> int list list
+   
+   
      
 end

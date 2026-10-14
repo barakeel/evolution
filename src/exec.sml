@@ -19,7 +19,7 @@ val dep_flag = ref false
 
 exception Check;
 val timer = ref 0;
-val timelimit = ref 10000;
+val timelimit = ref 100;
 fun ct n = 
   (timer := !timer + n; if !timer > !timelimit then raise Check else ())
 
@@ -129,10 +129,9 @@ val execl =
   [
   (onef, "1", 0),(twof, "2", 0),(tenf, "10", 0),
   (addf, "+", 2),(difff, "-", 1), (multf, "mult", 2),
-  (* (zerof,"0",0), *) (* (modf, "mod",2), (divf, "div", 2), *)
   (xvar, "x", 0),(yvar, "y", 0),
   (loop, "loop", 3),(cond, "cond", 3),
-  (* (readf, "read", 1), *) (zf, "z", 0) , (readif, "readi", 1)
+  (zf, "z", 0) , (readif, "readi", 1)
   ]
 
 val execv = Vector.fromList execl
@@ -147,7 +146,7 @@ fun get_arity n = #3 (Vector.sub (execv,n))
 fun get_id s = dfind s execd handle NotFound => raise Msg ("get_id: " ^  s)
 
 fun mk_exec (Ins (id,pl)) = (get_fun id) (map mk_exec pl)
-
+  
 val run_time = ref 0
 
 fun mk_exec_safe p = 

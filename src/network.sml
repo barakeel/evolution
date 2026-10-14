@@ -5,12 +5,12 @@ open HolKernel aiLib kernel sexp exec prog
 
 type 'a net = 'a vector vector
 type cache = ((int ref * int list ref * int list ref) net * 
-  (int * int * int ref)) list
+  (int * int * int ref * int ref)) list
 type pfn = 
   (prog ref * exec ref * (bool * bool * bool) option ref * int ref) net
 type pn = cache * pfn
 type pnx = pn * real * int
-type ex = (int vector * (int * int * int ref)) list
+type ex = (int vector * (int * int * int ref * int ref)) list
 
 fun debugf f = if !debug_flag then pe (f ()) else ()
 
@@ -18,8 +18,6 @@ val cache_glob = ref ([]:cache)
 val exi_glob = ref 0
 val node_counter = ref 0
 val node_dep_counter = ref 0
-
-val mod_glob = ref 1
 
 fun width_of_net net = Vector.length (Vector.sub (net,0))
 fun depth_of_net net = Vector.length net
@@ -118,46 +116,49 @@ fun runl pn iv = runl_aux pn 0 (depth_of_net pn) iv
 fun count tokenpos iv = 
   let 
     val (neg,pos) = (ref 0,ref 0)
-    fun f (i,x) = 
-      (* if (i - tokenpos) mod (!mod_glob) = 0 
-         then if x > 0 then incr pos else incr neg
-         else ()  *)
-      if i mod 2 = 0 andalso x > 0 then incr pos
-      else if i mod 2 = 1 andalso x > 0 then incr neg
+    fun f (i,x) =
+      if i mod 2 = 0 andalso x > 0 then incr neg
+      else if i mod 2 = 1 andalso x > 0 then incr pos
       else ()
-   
     val _ = Vector.appi f iv
   in
     (!neg,!pos)
   end
 
+val conf_penalty = ref 0.00001
+
+fun score_negpos obj (negtop,postop) =
+  let 
+    val (neg,pos) = (Real.fromInt negtop, Real.fromInt postop)
+    val total = neg + pos + 2.0 * !conf_penalty 
+    val r = if obj > 0 then pos else neg   
+  in
+    if total <= epsilon then 0.5 else (r + !conf_penalty) / total
+  end
+  
 fun score_obj pn exi (iv,obj,tokenpos) = 
   let 
     val _ = exi_glob := exi
     val newiv = runl pn iv
     val _ = debugf (fn () => "output: " ^ ilts (vector_to_list newiv))
     val (neg,pos) = count tokenpos newiv
-    val sc = if neg + pos = 0 then 0.5 else 
-      int_div (if obj > 0 then pos else neg) (neg + pos)  
   in
-    sc
+    score_negpos obj (neg,pos)
   end
 
-fun logit n x = if x > n then raise Msg ("logit: " ^ its x) else
-                if x <= 0 then 100000000.0 else 0.0 - Math.ln (int_div x n)
+fun logit x = ~ (Math.ln x)
+fun loss_scl scl = sum_real (map logit scl)
 
-fun score_exone pfn exi (iv,(obj,tokenpos,_)) = 
+fun score_exone pfn exi (iv,(obj,tokenpos,_,_)) = 
   score_obj pfn exi (iv,obj,tokenpos)
   
 fun infer_test pfn ex = 
   if null ex then raise Msg "infer_test: empty" else 
-  let 
-    val w = width_of_net pfn
-    val w' = w div (!mod_glob)
+  let
     val scl = mapi (score_exone pfn) ex
     val sclpos = filter (fn x => x > 0.5) scl
     val acc = int_div (length sclpos) (length scl)
-    val loss = sum_real (map (logit w') scl)
+    val loss = loss_scl scl
   in
     (loss, acc)
   end
@@ -181,7 +182,7 @@ fun iv_of_objl w tokenpos objl =
     val m = Vector.length pobjv
     fun f i = Vector.sub (pobjv, i mod m)
   in
-    (Vector.tabulate (w,f), (obj,tokenpos,ref 0))
+    (Vector.tabulate (w,f), (obj,tokenpos,ref 0,ref 0))
   end  
 
 fun vol_of_sentencel w l = 
@@ -190,11 +191,6 @@ fun vol_of_sentencel w l =
     val r = List.concat (map f l)
   in  
     r
-  end
-
-fun vol_of_exol exol = 
-  let fun f (inputl,output) = (Vector.fromList inputl, (output,0,ref 0)) in
-    map f exol
   end
 
 fun cache_of_vol (d,w) vol =
@@ -220,7 +216,28 @@ val z_id = get_id "z"
 
 
 (* test *)
-fun runc_node scref cache (d,w) pv (iv,ov) di wi =
+fun negpos_update wi (negref,posref) oold onew =
+  if onew > 0 andalso oold <= 0 then 
+    let val f = 
+      if wi mod 2 = 0 
+      then (fn () => decr negref) 
+      else (fn () => decr posref)
+    in
+      if wi mod 2 = 0 then incr negref else incr posref; 
+      undol_glob := f :: !undol_glob
+    end
+  else if onew <= 0 andalso oold > 0 then 
+    let val f = 
+      if wi mod 2 = 0 
+      then (fn () => incr negref) 
+      else (fn () => incr posref)
+    in
+      if wi mod 2 = 0 then decr negref else decr posref; 
+      undol_glob := f :: !undol_glob
+    end
+  else ()
+
+fun runc_node negpos cache (d,w) pv (iv,ov) di wi =
   let
     val _ = self_glob := wi
     val _ = incr node_counter
@@ -230,27 +247,18 @@ fun runc_node scref cache (d,w) pv (iv,ov) di wi =
     val index2 = (wi + 1) mod w
     val i2 = get_value iv index2
     val _ = z_glob := get_value iv wi
-    val r = (!fref) (i1,i2)
+    val onew = (!fref) (i1,i2)
     val oref = get_ref ov wi
     val oold = !oref
     fun g () = oref := oold
     val _ = undol_glob := g :: !undol_glob
-    val _ = 
-      if di = d - 1 andalso (wi - !tokenpos_glob) mod (!mod_glob) = 0 then
-        if r > 0 andalso oold <= 0 
-          then (incr scref; 
-                undol_glob := (fn () => decr scref) :: !undol_glob)
-        else if r <= 0 andalso oold > 0 
-          then (decr scref; 
-                undol_glob := (fn () => incr scref) :: !undol_glob)
-        else ()
-      else ()
+    val _ = if di = d - 1 then negpos_update wi negpos oold onew else ()
   in
-    oref := r
+    oref := onew
   end
 
 (* final pass *)
-fun runc_node_dep scref cache (d,w) pv (iv,ov) di wi =
+fun runc_node_dep negpos cache (d,w) pv (iv,ov) di wi =
   let
     val _ = self_glob := wi
     val _ = incr node_dep_counter
@@ -268,36 +276,31 @@ fun runc_node_dep scref cache (d,w) pv (iv,ov) di wi =
     val index2 = (wi + 1) mod w
     val i2 = access b2 iv index2
     val _ = z_glob := access b3 iv wi
-    val r = f (i1,i2)
+    val onew = f (i1,i2)
     val oref = get_ref ov wi
     val oold = !oref
     val _ = update_depl cache (di,wi) (!access_glob)
-    val _ = 
-      if di = d - 1 andalso (wi - !tokenpos_glob) mod (!mod_glob) = 0 then
-        if r > 0 andalso oold <= 0 then incr scref
-        else if r <= 0 andalso oold > 0 then decr scref
-        else ()
-      else ()
+    val _ = if di = d - 1 then negpos_update wi negpos oold onew else ()
   in
-    oref := r
+    oref := onew
   end
 
-fun runc_layer scref cache pn (d,w) di wil =
+fun runc_layer negpos cache pn (d,w) di wil =
   let
     val pv = Vector.sub (pn,di)
     val iv = Vector.sub (cache,di)
     val ov = Vector.sub (cache,di+1)
     val _ = iv_glob := iv
     val _ = if !dep_flag 
-            then app (runc_node_dep scref cache (d,w) pv (iv,ov) di) wil
-            else app (runc_node scref cache (d,w) pv (iv,ov) di) wil
+            then app (runc_node_dep negpos cache (d,w) pv (iv,ov) di) wil
+            else app (runc_node negpos cache (d,w) pv (iv,ov) di) wil
   in
     ()
   end
  
 val fullupdate_flag = ref false 
  
-fun runcl_aux scref b cache pn (d,w) di wil = 
+fun runcl_aux negpos b cache pn (d,w) di wil = 
   if di >= d then () else
   let
     val newwil = if b then List.tabulate (w,I) else 
@@ -307,9 +310,9 @@ fun runcl_aux scref b cache pn (d,w) di wil =
       in
         elist (foldl add_dep (eempty Int.compare) wil)
       end
-    val () = runc_layer scref cache pn (d,w) di wil
+    val () = runc_layer negpos cache pn (d,w) di wil
   in
-    runcl_aux scref b cache pn (d,w) (di+1) newwil
+    runcl_aux negpos b cache pn (d,w) (di+1) newwil
   end
 
 
@@ -324,10 +327,10 @@ fun count_pos v =
     Vector.appi f v; !pos
   end
 
-fun runcl b (cache,(_,tokenpos,scref)) pn di wil = 
+fun runcl b (cache,(_,tokenpos,negref,posref)) pn di wil = 
    let 
      val _ = tokenpos_glob := tokenpos
-     val _ = runcl_aux scref b cache pn (dim_of_net pn) di wil
+     val _ = runcl_aux (negref,posref) b cache pn (dim_of_net pn) di wil
    in
      ()
    end
@@ -380,48 +383,11 @@ fun update_pn pn (p,di,wi) =
 
 fun input_layer cache = Vector.sub (cache, 0)
 
-(*
-fun count_ref ov = 
-  let 
-    val (neg,pos) = (ref 0,ref 0)
-    fun f (i,x) = if ! (s13 x) > 0 then incr pos else incr neg
-    val _ = Vector.appi f ov
-  in
-    (!neg,!pos)
-  end
-*)
-
-(*
-fun score_cache_one (cache,(obj,tokenpos,scref)) =
-  let
-    val ov = output_layer cache 
-    val (neg,pos) = count_ref ov
-  in
-    if obj > 0 then pos else neg
-  end 
-*)
-
-fun score_cache w' (cache,(obj,tokenpos,scref)) =
-  if obj > 0 then !scref else w' - !scref
-
-(*
-  let 
-    val r0 = 
-    (* val r1 = score_cache_one (cache,(obj,tokenpos,scref)) *)
-  in
-    (* if r1 <> r0 then raise Msg "score: mismatch" else *) r0
-  end
-*)   
+fun score_cache (cache,(obj,tokenpos,negref,posref)) =
+  score_negpos obj (!negref,!posref)
 
 fun score_pn (cachel,_) = 
-  let
-    val w = width_of_net (fst (hd cachel))
-    val w' = w div (!mod_glob)
-    val scl = map (score_cache w') cachel
-    val sc = sum_real (map (logit w') scl)
-  in
-    (sc,scl)
-  end
+  let val scl = map score_cache cachel in (loss_scl scl ,scl) end
 
 fun random_pnx (d,w) vol =
   let 

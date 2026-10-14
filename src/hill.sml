@@ -26,22 +26,27 @@ val iter_dep_counter = ref 0
 fun log_aux (i, di,wi, (pn,sc,t), scl) =
   let
     val _ = cache_glob := fst pn
-    val w = width_of_net (snd pn)
-    val w' = w div (!mod_glob) 
     val sizel = map prog_size (flatten_pn pn)
     val size = sum_int sizel
-    val sclpos = filter (fn x => x > w' div 2) scl
-    val acc = int_div (length sclpos) (length scl)
+    val sclpos = filter (fn x => x > 0.5) scl
+    val nex = length scl
+    val acc = int_div (length sclpos) nex
+    val confl = map (fn (_,(_,_,x,y)) => !x + !y) (!cache_glob)
+    val conf = int_div (sum_int confl) nex
   in  
-    pe (its i ^ ": " ^ "loss " ^ rts_pad 4 sc ^ ", " ^ "acc " ^ 
-        rts_pad 4 acc ^ " at " ^ its di ^ "-" ^ its wi)
+    pe (its i ^ ": " ^ "loss " ^ rts_pad 4 sc ^ 
+        ", acc " ^ rts_pad 4 acc ^ 
+        ", conf " ^ rts_pad 4 conf ^
+        ", pos " ^ its di ^ "-" ^ its wi
+        
+        )
     (* ; pe (cws (map its scl)) *)
   end
 
 fun log x = total_time log_time log_aux x
 
 fun stats_aux param loss (cachel,pfn) i = 
-  if i mod 1000 = 0 andalso i <> 0 then
+  if i mod 10000 = 0 andalso i <> 0 then
   let 
     val _ = cache_glob := cachel
     val nex = length cachel
@@ -54,7 +59,10 @@ fun stats_aux param loss (cachel,pfn) i =
     val t4 = int_div (!node_counter * 100) (size * i)
     val t5 = int_div (!node_dep_counter * 100) (size * !iter_dep_counter)
     val (losst,acct) = infer_test pfn (#exl param)
-    
+    val confl = map (fn (_,(_,_,x,y)) => !x + !y) (!cache_glob)
+    val conf = int_div (sum_int confl) nex 
+    val p = (! o #1) 
+      (Vector.sub (Vector.sub (pfn, random_int (0,d-1)), random_int (0,w-1))) 
   in
     pe ("\n" ^ "iter " ^ its i ^ " " ^ its (!iter_dep_counter) ^ ", " ^ 
         rts_round 3 t2 ^ " ms/i, " ^ 
@@ -68,7 +76,9 @@ fun stats_aux param loss (cachel,pfn) i =
         "infer " ^ rts_pad 2 (!log_time) ^ ", " ^
         "init " ^ rts_pad 2 (!init_time) ^ 
         "\n" ^ "loss " ^ rts_pad 4 losst ^ ", " ^ 
-               "acc " ^ rts_pad 4 acct
+               "acc " ^ rts_pad 4 acct ^ ", " ^
+               "conf " ^ rts_pad 4 conf ^
+        "\n" ^ "example program: " ^ string_of_prog p
         );
     
     if Real.abs (loss - losst) > 0.1 then raise Msg "mismatch: loss" else ()
@@ -122,7 +132,7 @@ fun mutate_pn param i (pnx as (pn,sc,t)) =
    -------------------------------------------------------------------------- *)
 
 fun check_rt param i =
-  i mod 1000 = 0 andalso Timer.checkRealTimer (#rt param) > #rtmax param
+  i mod 10000 = 0 andalso Timer.checkRealTimer (#rt param) > #rtmax param
 
 fun hill_aux param i (pnx as (pn,sc,t)) =
   (
@@ -159,28 +169,55 @@ fun run_single (width,depth,rtmax) (exl,exlt) =
 
 end (* struct *)
 
+(*
+todo: remove the cache put the computation graph on the network side
+disallow dynamic connections.
+
+idea only record posneg for each example and recompute the difference everytime
+
+look at which nodes requires modifications, do not attempt to modify a node
+that is "perfect".
+*)
 
 (*
 
+PolyML.print_depth 0;
 load "hill"; open kernel aiLib prog exec network hill;
 val l2 = map stil (readl "aaa_test");
-val (width,depth,rtmax) = (64,4,1000.0);
-mod_glob := 8;
-full_flag := false;
+PolyML.print_depth 40;
+val (width,depth,rtmax) = (512,4,3600.0);
+conf_penalty := 0.0001;
 PolyML.print_depth 2;
-val exl1 = vol_of_sentencel width (first_n 10 l2); 
-(* initializes some ref *)
+val exl1 = vol_of_sentencel width (first_n 10 l2); (* initializes some ref *)
 val r = time (run_single (width,depth,rtmax)) (exl1,[]);
 PolyML.print_depth 40;
 
+
+iter 10000 3077, 20.426 ms/i, 285.0 ku/i, 56.72 u/n, node 0.47% 0.39% 
+  total time 204.26, score 0.96, update 134.84 47.81, infer 5.82, init 6.93
+loss 282.7277, acc 0.7702, conf 27.0864
+example program: (cond 10 1 (mult (- (+ (+ (+ (readi 225319066190) 1) 1) (- 10))) (cond (- (- (mult (- (- 2)) (readi 35564989799)))) (loop (+ (readi 424887978670) (readi 571821572060)) (- (- 2)) (cond (loop (readi 886548213143) 1 1) 10 10)) (+ 1 (mult 10 2)))))
+
+iter 10000 1868, 31.055 ms/i, 786.0 ku/i, 61.84 u/n, node 1.2% 0.81% 
+  total time 310.55, score 0.71, update 234.37 54.08, infer 6.23, init 3.70
+loss 267.5497, acc 0.8438, conf 35.4210
+example program: (loop (- (cond (readi 323445732390) (readi 794923221132) (readi 824941873935))) (- 1) (mult 10 2))
+
+
+
+
+
+let val pl = random_subset 20 (flatten_pn (#1 r)) in
+  app (pe o string_of_prog) pl
+end;
+
 val pl = flatten_pn (#1 r);
-app (pe o string_of_prog) pl;
+val il = map zip_prog pl;
 
+writel "aaa_prog" (map infts il);
 
+val sl = readl "aaa_prog";
 
-
-early stoppage
-1000 * 1000 * 10 = 10 millions
 
 (* generates a small data set *)
 val l = read_oeis ();
@@ -189,42 +226,9 @@ val l1 = filter (fn x => length x <= 16) l;
 val l1' = random_subset 10 l1;
 val l2 = map binl_of_idl l1'; map length l2;
 writel "aaa_test" (map ilts l2);
-(* *)
-
-(* todo before running run_single: resets the score *)
-val exl1 = vol_of_sentencel width [[1,0,1,0,1,1,0,0,0,1,0,1,0,1,1,1,1,0],[1,0,1,1,0,0,0,1,0,1,0,1,1,1,0]];
-todo: compute the average 
-      number of instructions per node (suspect it's less than 10 but could be close to 100 if some loops)
-
-fix a bug: that happens rarely loss mismatch
-
-plan: 
-1) do mod
-2) train on 10 examples
-3) do parallelization
-4) 
 
 *)
 
 
-(*
-load "hill"; open kernel aiLib prog network hill;
-fun concatn n x = if n <= 1 then x else x @ concatn (n-1) x;
-val (width,depth,rtmax) = (8,1,100.0);
-fun mk_parity_pb width =  
-  let
-    fun product_int l = case l of [] => 1 | a :: m => a * product_int m;
-    val exol0 = cartesian_productl (List.tabulate (width,fn _ => [~1,1]))
-    val exol1 = map (fn x => (x, product_int x)) exol0
-    val exl = vol_of_exol exol1
-  in
-    exl
-  end;
-val exl1 = mk_parity_pb width;
-val exl2 = exl1;
-val r = run_single (width,depth,rtmax) (exl1,exl2);
-val pl = flatten_pn (#1 r);
-app (pe o string_of_prog) pl;
-*)
 
 

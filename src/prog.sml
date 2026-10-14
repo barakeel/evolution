@@ -76,9 +76,10 @@ fun zip_prog p = zip_il (Vector.length execv) (flatten_prog p);
 fun unzip_prog i = unflatten_prog (unzip_il (Vector.length execv) i);
 
 (* sexp *)
-fun sexp_of_prog (Ins (n,pl)) = case pl of 
-    [] => Atom (get_name n)
-  | _ => Sexp (Atom (get_name n) :: map sexp_of_prog pl) 
+fun sexp_of_prog p = case p of 
+    Ins (~1,[Ins(i,[])]) => Atom (its (i - Vector.length execv))
+  | Ins (n,[]) => Atom (get_name n)
+  | Ins (n,pl) => Sexp (Atom (get_name n) :: map sexp_of_prog pl) 
 
 val string_of_sexp = sexp_to_string
 val string_of_prog = string_of_sexp o sexp_of_prog;
@@ -102,33 +103,85 @@ fun binl_of_prog p = List.concat (map (binl_of_int 4) (flatten_prog p));
  
 (* val readid = get_id "read"  *)
 val readiid = get_id "readi"
-   
-val arityl = (* filter (fn x => fst x <> readid) *) 
+val loopid = get_id "loop"  
+val xid = get_id "x"
+val yid = get_id "y"
+val zid = get_id "z"
+
+val arityl = (* filter (fn x => not (mem (fst x) [zid])) *)
   (List.tabulate (Vector.length execv, fn i => (i, get_arity i)))
+  
 val arityl0 = map fst (filter (fn x => snd x = 0) arityl)
+val arityl0x = filter (fn x => not (mem x [xid,yid])) arityl0
 val aritylpos = filter (fn x => snd x > 0) arityl
 
-val constl = List.tabulate (6, fn i => (i, get_arity i))
-val constl0 = map fst (filter (fn x => snd x = 0) arityl)
-val constlpos = filter (fn x => snd x > 0) arityl
+(* under read *)
+val constl = first_n 6 arityl
+val constl0 = map fst (filter (fn x => snd x = 0) constl)
+val constlpos = filter (fn x => snd x > 0) constl
 
-fun random_prog_size b n = 
-  if n <= 1 then Ins (random_elem (if b then constl0 else arityl0), []) else
+(* read random *)
+(* val random_read () = Ins (readiid, *) 
+
+fun random_prog_size readb n = 
+  let val l0 = if readb then constl0 else arityl0 in
+  if n <= 1 then Ins (random_elem l0,[]) else
   let
     val candl = filter (fn x => snd x <= n - 1) 
-      (if b then constlpos else aritylpos) 
+      (if readb then constlpos else aritylpos) 
     val (id,arity) = 
       if null candl 
-      then (random_elem (if b then constl0 else arityl0), 0)
+      then raise Msg "needs at least one arity 1 operator" 
       else random_elem candl
     val l = random_elem (number_partition arity (n - 1))
   in
-    (* if id = readiid 
-    then Ins (id, map (random_prog_size true) l)
-    else *) Ins (id, map (random_prog_size false) l)
+    if id = readiid 
+      then Ins (id, map (random_prog_size true) l)
+    else if id = loopid 
+      then 
+      let val (a,b,c) = triple_of_list l in
+        Ins(id, [random_prog_size readb a, 
+                 random_prog_size readb b,
+                 random_prog_size readb c])
+      end
+    else Ins (id, map (random_prog_size readb) l)
   end   
- 
-fun random_prog () = random_prog_size false (random_int (5,20)); 
+  end
+  
+fun count_readiid (Ins(i,pl)) = 
+  if i = readiid then 1 else sum_int (map count_readiid pl)
+  
+fun random_prog () = 
+  let val p = random_prog_size false (random_int (5,20)) in 
+    if count_readiid p <= 1
+    then random_prog ()
+    else p
+  end
+  
+(* --------------------------------------------------------------------------
+   Compute static dependencies in a program
+   -------------------------------------------------------------------------- *)
+
+fun eval_const p = (mk_exec p) (0,0)
+
+fun collect_readargl_aux loopb r (Ins(i,pl)) =
+  if i = xid andalso not loopb then r := ~1 :: !r else
+  if i = yid andalso not loopb then r := 1 :: !r else
+  if i = zid then r := 0 :: !r else
+  if i = readiid then r := eval_const (hd pl) :: !r else
+  if i = loopid then 
+    let val (a,b,c) = triple_of_list pl in
+      collect_readargl_aux true r a;
+      collect_readargl_aux loopb r b;
+      collect_readargl_aux loopb r c
+    end
+  else app (collect_readargl_aux loopb r) pl
+  
+fun collect_readargl p =
+  let val r = ref [] in 
+    collect_readargl_aux false r p; 
+    mk_fast_set Int.compare (!r) 
+  end
 
 (* --------------------------------------------------------------------------
    Reading OEIS programs
@@ -160,5 +213,13 @@ fun read_oeis () =
   end
   
 end (* struct *)
+
+(*
+load "prog"; open prog;
+val p = random_prog ();
+string_of_prog p;
+collect_readargl p;
+*)
+
 
 
