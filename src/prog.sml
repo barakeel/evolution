@@ -151,18 +151,20 @@ fun random_prog_size readb n =
 fun count_readiid (Ins(i,pl)) = 
   if i = readiid then 1 else sum_int (map count_readiid pl)
   
-fun random_prog () = 
+fun random_prog di = 
   let val p = random_prog_size false (random_int (5,20)) in 
     if count_readiid p <= 1
-    then random_prog ()
+    then random_prog di
     else p
   end
+  
+val random_prog_glob = ref random_prog
   
 (* --------------------------------------------------------------------------
    Compute static dependencies in a program
    -------------------------------------------------------------------------- *)
 
-fun eval_const p = (mk_exec p) (0,0)
+fun eval_const p = (mk_exec_err p) (0,0)
 
 fun collect_readargl_aux loopb r (Ins(i,pl)) =
   if i = xid andalso not loopb then r := ~1 :: !r else
@@ -216,7 +218,7 @@ end (* struct *)
 
 (*
 load "prog"; open prog;
-val p = random_prog ();
+val p = random_prog 0;
 string_of_prog p;
 collect_readargl p;
 *)

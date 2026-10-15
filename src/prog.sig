@@ -26,7 +26,7 @@ sig
   val binl_of_prog : prog -> int list
    
   (* random *)
-  val random_prog : unit -> prog
+  val random_prog_glob : (int -> prog) ref
 
   (* oeis *)
   val read_oeis : unit -> int list list

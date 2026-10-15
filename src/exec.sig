@@ -31,6 +31,6 @@ sig
   val execv : ((exec list -> exec) * string * int) vector 
   val timelimit : int ref
   val mk_exec : prog -> exec
-  val mk_exec_safe : prog -> exec
+  val mk_exec_err : prog -> exec
    
 end

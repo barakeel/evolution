@@ -7,7 +7,8 @@ type 'a net = 'a vector vector
 type cache = ((int ref * int list ref * int list ref) net * 
   (int * int * int ref * int ref)) list
 type pfn = 
-  (prog ref * exec ref * (bool * bool * bool) option ref * int ref) net
+  (prog ref * exec ref * (bool * bool * bool) option ref * int ref
+   * int list ref * int list ref) net
 type pn = cache * pfn
 type pnx = pn * real * int
 type ex = (int vector * (int * int * int ref * int ref)) list
@@ -23,6 +24,12 @@ fun width_of_net net = Vector.length (Vector.sub (net,0))
 fun depth_of_net net = Vector.length net
 fun dim_of_net pn = (depth_of_net pn, width_of_net pn)
 
+fun net_app f net = 
+  let fun g (di,line) = Vector.appi (fn (wi,x) => f (x,di,wi)) line in
+    Vector.appi g net
+  end
+
+
 fun flatten_pn (_,pn) = 
   map (! o #1) (List.concat (map vector_to_list (vector_to_list pn)))
 
@@ -33,6 +40,7 @@ fun pn_compare (pn1,pn2) =
    Dependency graph
    -------------------------------------------------------------------------- *)
 
+(*
 fun add_edge cache (d,w) wi = 
   let val (_,_,outgoing) = Vector.sub (Vector.sub (cache,d),wi) in
     if mem w (!outgoing) then () else outgoing := w :: (!outgoing)
@@ -52,6 +60,7 @@ fun update_depl cache (d,w) depl =
     app (rm_edge cache (d,w)) olddepl;
     app (add_edge cache (d,w)) depl
   end
+*)
 
 (* --------------------------------------------------------------------------
    Run program networks: programs have same depth index as their input.
@@ -70,7 +79,7 @@ fun print_cache cache = Vector.appi print_cache_one cache
 fun run_node di width pfv iv i =
   let
     val _ = self_glob := i
-    val (pref,fref,_,_) = Vector.sub (pfv, i)
+    val (pref,fref,_,_,_,_) = Vector.sub (pfv, i)
     val i1 = get_value iv ((i - 1) mod width)       
     val i2 = get_value iv ((i + 1) mod width)
     val _ = z_glob := get_value iv i
@@ -240,8 +249,8 @@ fun negpos_update wi (negref,posref) oold onew =
 fun runc_node negpos cache (d,w) pv (iv,ov) di wi =
   let
     val _ = self_glob := wi
-    val _ = incr node_counter
-    val (pref,fref,_,_) = Vector.sub (pv, wi)
+    val _ = if !dep_flag then incr node_dep_counter else incr node_counter
+    val (pref,fref,_,_,_,_) = Vector.sub (pv, wi)
     val index1 = (wi - 1) mod w
     val i1 = get_value iv index1
     val index2 = (wi + 1) mod w
@@ -257,65 +266,35 @@ fun runc_node negpos cache (d,w) pv (iv,ov) di wi =
     oref := onew
   end
 
-(* final pass *)
-fun runc_node_dep negpos cache (d,w) pv (iv,ov) di wi =
-  let
-    val _ = self_glob := wi
-    val _ = incr node_dep_counter
-    val (pref,fref,blref,_) = Vector.sub (pv, wi)
-    val (p,f) = (!pref,!fref)
-    val (b1,b2,b3) = case !blref of SOME x => x | NONE => 
-      let val r = 
-        (contain_id_fo x_id p, contain_id_fo y_id p, contain_id z_id p)
-      in
-        blref := SOME r; r
-      end
-    val _ = access_glob := []
-    val index1 = (wi - 1) mod w
-    val i1 = access b1 iv index1
-    val index2 = (wi + 1) mod w
-    val i2 = access b2 iv index2
-    val _ = z_glob := access b3 iv wi
-    val onew = f (i1,i2)
-    val oref = get_ref ov wi
-    val oold = !oref
-    val _ = update_depl cache (di,wi) (!access_glob)
-    val _ = if di = d - 1 then negpos_update wi negpos oold onew else ()
-  in
-    oref := onew
-  end
-
 fun runc_layer negpos cache pn (d,w) di wil =
   let
     val pv = Vector.sub (pn,di)
     val iv = Vector.sub (cache,di)
     val ov = Vector.sub (cache,di+1)
     val _ = iv_glob := iv
-    val _ = if !dep_flag 
-            then app (runc_node_dep negpos cache (d,w) pv (iv,ov) di) wil
-            else app (runc_node negpos cache (d,w) pv (iv,ov) di) wil
+    val _ = app (runc_node negpos cache (d,w) pv (iv,ov) di) wil
   in
     ()
   end
  
 val fullupdate_flag = ref false 
+
+fun s66 (_,_,_,_,_,outgoing) = outgoing
  
-fun runcl_aux negpos b cache pn (d,w) di wil = 
+fun runcl_aux negpos b cache pfn (d,w) di wil = 
   if di >= d then () else
   let
     val newwil = if b then List.tabulate (w,I) else 
       let 
-        val ov = Vector.sub (cache,di+1)
-        fun add_dep (wi,d) = eaddl (! (s33 (Vector.sub (ov,wi)))) d
+        val pv = Vector.sub (pfn,di)
+        fun add_dep (wi,dict) = eaddl (! (s66 (Vector.sub (pv,wi)))) dict
       in
         elist (foldl add_dep (eempty Int.compare) wil)
       end
-    val () = runc_layer negpos cache pn (d,w) di wil
+    val () = runc_layer negpos cache pfn (d,w) di wil
   in
-    runcl_aux negpos b cache pn (d,w) (di+1) newwil
+    runcl_aux negpos b cache pfn (d,w) (di+1) newwil
   end
-
-
 
 fun output_layer cache = Vector.sub (cache, Vector.length cache - 1)
 
@@ -327,10 +306,10 @@ fun count_pos v =
     Vector.appi f v; !pos
   end
 
-fun runcl b (cache,(_,tokenpos,negref,posref)) pn di wil = 
+fun runcl b (cache,(_,tokenpos,negref,posref)) pfn di wil = 
    let 
      val _ = tokenpos_glob := tokenpos
-     val _ = runcl_aux (negref,posref) b cache pn (dim_of_net pn) di wil
+     val _ = runcl_aux (negref,posref) b cache pfn (dim_of_net pfn) di wil
    in
      ()
    end
@@ -350,6 +329,40 @@ fun update_cache (cachel,pfn) (di,wil) =
 (* --------------------------------------------------------------------------
    Initialization and updates
    -------------------------------------------------------------------------- *)
+
+(* could replace with a set for better performance for large 
+number of connections *)
+
+fun rm_sedge pfn (d',w) wi =
+  let val (_,_,_,_,_,outgoing) = Vector.sub (Vector.sub (pfn,d'),wi) in
+    outgoing := filter (fn x => x <> w) (!outgoing)
+  end
+
+fun add_sedge pfn (d',w) wi = 
+  let val (_,_,_,_,_,outgoing) = Vector.sub (Vector.sub (pfn,d'),wi) in
+    if mem w (!outgoing) then () else outgoing := w :: !outgoing
+  end
+
+fun update_sdep pfn (p,di,wi) =
+  if di <= 0 then () else
+  let 
+    val w = width_of_net pfn
+    val newincoming = mk_fast_set Int.compare 
+      (map (fn x => (x + wi) mod w) (collect_readargl p))
+    val (_,_,_,_,incoming,_) = Vector.sub (Vector.sub (pfn,di),wi) 
+    val oldincoming = !incoming  
+  in  
+    incoming := newincoming;
+    app (rm_sedge pfn (di-1,wi)) oldincoming;
+    app (add_sedge pfn (di-1,wi)) newincoming
+  end
+
+fun recompute_alldep pfn = 
+  let fun f (x,di,wi) = 
+    if di <= 0 then () else update_sdep pfn (! (#1 x),di,wi) 
+  in
+    net_app f pfn
+  end
   
 fun init_cache vol pfn =
   let
@@ -358,20 +371,24 @@ fun init_cache vol pfn =
     val _ = dep_flag := true
     val _ = update_cache_full (cache,pfn)
     val _ = dep_flag := false
+    val _ = recompute_alldep pfn
   in
     cache
   end
 
 fun update_pn pn (p,di,wi) = 
   let
-    val (pref,fref,blref,tref) = Vector.sub (Vector.sub (snd pn,di), wi) 
+    val (pref,fref,blref,tref,_,_) = 
+      Vector.sub (Vector.sub (snd pn,di), wi) 
     val (pold,fold,blold,told) = (!pref,!fref,!blref,!tref)
-    fun f () = (pref := pold; fref := fold; blref := blold; tref := told)
+    fun f () = 
+     (pref := pold; fref := fold; blref := blold; tref := told)
     val _ = undol_glob := f :: !undol_glob
-    val _ = (pref := p; fref := mk_exec_safe p; blref := NONE)
+    val _ = (pref := p; fref := mk_exec p; blref := NONE)
     val r = !run_time
     val _ = update_cache pn (di,[wi])
     val _ = tref := !run_time - r
+    val _ = if !dep_flag then update_sdep (snd pn) (p,di,wi) else ()
   in
     ()
   end
@@ -393,10 +410,11 @@ fun random_pnx (d,w) vol =
   let 
     val _ = pe "init programs"
     val maxint = valOf Int.maxInt
-    fun f i = Vector.tabulate (w, fn _ => 
-      let val p = random_prog () in (ref p, ref (mk_exec_safe p), ref NONE
-      , ref maxint) 
-      end 
+    fun f di = Vector.tabulate (w, fn wi => 
+      let val p = (!random_prog_glob) di in 
+        (ref p, ref (mk_exec p), ref NONE, ref maxint, 
+         ref [], ref []) 
+      end
       )
     val pfn = Vector.tabulate (d, f)
     val _ = pe "init cache"

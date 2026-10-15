@@ -97,7 +97,7 @@ fun mutation param pn =
     val (d,w) = (#depth param, #width param)
     val (di,wi) = (random_int (0, d - 1), random_int (0, w - 1))
   in
-    (random_prog (), di, wi)  
+    ((!random_prog_glob) di, di, wi)  
   end
 
 fun mutate_pn param i (pnx as (pn,sc,t)) =
@@ -181,17 +181,25 @@ that is "perfect".
 
 (*
 
+load "hill";
 PolyML.print_depth 0;
-load "hill"; open kernel aiLib prog exec network hill;
-val l2 = map stil (readl "aaa_test");
+open kernel aiLib prog exec network hill;
 PolyML.print_depth 40;
+val l2 = map stil (readl "aaa_test");
 val (width,depth,rtmax) = (512,4,3600.0);
 conf_penalty := 0.0001;
 PolyML.print_depth 2;
-val exl1 = vol_of_sentencel width (first_n 10 l2); (* initializes some ref *)
+val exl1 = vol_of_sentencel width (first_n 10 l2); (* ! *)
 val r = time (run_single (width,depth,rtmax)) (exl1,[]);
 PolyML.print_depth 40;
 
+(*
+val pl = map (unzip_prog o stinf) (readl "aaa_prog");
+val pll = mk_batch 512 pl;
+val pvv = Vector.fromList (map Vector.fromList pll);
+fun f (di:int) = Vector.sub (Vector.sub (pvv,di), random_int (0, 511));
+random_prog_glob := f;
+*)
 
 iter 10000 3077, 20.426 ms/i, 285.0 ku/i, 56.72 u/n, node 0.47% 0.39% 
   total time 204.26, score 0.96, update 134.84 47.81, infer 5.82, init 6.93
@@ -216,7 +224,7 @@ val il = map zip_prog pl;
 
 writel "aaa_prog" (map infts il);
 
-val sl = readl "aaa_prog";
+
 
 
 (* generates a small data set *)

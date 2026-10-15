@@ -9,7 +9,8 @@ sig
   type cache = ((int ref * int list ref * int list ref) net * 
                 (int * int * int ref * int ref)) list
   type pfn = 
-    (prog ref * exec ref * (bool * bool * bool) option ref * int ref) net
+    (prog ref * exec ref * (bool * bool * bool) option ref * int ref
+    * int list ref * int list ref) net
   type pn = cache * pfn
   type pnx = pn * real * int
   type ex = (int vector * (int * int * int ref * int ref)) list

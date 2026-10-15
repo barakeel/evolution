@@ -145,12 +145,12 @@ fun get_arity n = #3 (Vector.sub (execv,n))
 
 fun get_id s = dfind s execd handle NotFound => raise Msg ("get_id: " ^  s)
 
-fun mk_exec (Ins (id,pl)) = (get_fun id) (map mk_exec pl)
+fun mk_exec_unsafe (Ins (id,pl)) = (get_fun id) (map mk_exec_unsafe pl)
   
 val run_time = ref 0
 
-fun mk_exec_safe p = 
-  let val f = mk_exec p in 
+fun mk_exec p = 
+  let val f = mk_exec_unsafe p in 
     fn x => 
       let val r = (timer := 0; f x 
    handle Div => default | Overflow => default | Check => default) 
@@ -158,6 +158,18 @@ fun mk_exec_safe p =
         run_time := !timer + !run_time; r
       end
   end
+
+fun mk_exec_err p = 
+  let val f = mk_exec_unsafe p in 
+    fn x => 
+      let val r = (timer := 0; f x 
+   handle Div => raise Msg "div" | Overflow => raise Msg "overflow" 
+        | Check => raise Msg "check") 
+      in
+        r
+      end
+  end
+
 
 end (* struct *)
 
