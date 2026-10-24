@@ -4,12 +4,9 @@ sig
   type pnx = network.pnx
   type ex = network.ex
   type param =
-    {wid: int, width: int, depth: int,
-     exl: ex, exlt: ex,
-     rt: Timer.real_timer, rtmax: Time.time,
-     share : bool} 
+    {wid: int, exl: ex, exlt: ex,
+     rt: Timer.real_timer, rtmax: Time.time, share : bool} 
   
-   
   (* logging *)
   val log_time : real ref
   val io_time : real ref

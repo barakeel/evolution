@@ -11,7 +11,6 @@ type exec = obj * obj -> obj
    -------------------------------------------------------------------------- *)
 
 val default = 0
-val dep_flag = ref false
 
 (* --------------------------------------------------------------------------
    Timer
@@ -33,52 +32,19 @@ fun zf fl = fn xy => (ct 1; !z_glob)
 val xprev_glob = ref default
 fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 
-fun s13 (a,b,c) = a
-
-val access_glob = ref []
-
-fun access b iv i = 
-  (
-  if !dep_flag andalso b andalso not (mem i (!access_glob)) 
-  then access_glob := i :: !access_glob else ();
-  ! (s13 (Vector.sub (iv, i)))
-  )
-
 (* read from previous layer *)
-val iv_glob = ref 
-  (Vector.fromList [(ref 0, ref ([]: int list), ref ([]: int list))])
+val iv_glob = ref (Vector.fromList [ref 0])
+fun access x = ! (Vector.sub (!iv_glob, x mod (Vector.length (!iv_glob))))
 
 fun readf fl = case fl of
-    [f] => (fn xy => 
-     (
-     ct 5; 
-     access true (!iv_glob) (f xy mod (Vector.length (!iv_glob)))
-     )
-    )
+    [f] => (fn xy => (ct 5; access (f xy)))
   | _ => raise Msg "readf"
-
 
 val self_glob = ref 0
 
-
 fun readif fl = case fl of
-    [f] => (fn xy => 
-    (ct 5; 
-     access true (!iv_glob) ((!self_glob + f xy) mod (Vector.length (!iv_glob))))
-    )
+    [f] => (fn xy => (ct 5; access (!self_glob + f xy)))
   | _ => raise Msg "readif"
-
-(* read from current layer *)
-(* 
-val ivc_glob = ref (Vector.fromList [ref default])
-val ivc_size = ref
-fun readcf fl = case fl of
-    [f] => (fn xy => 
-    (ct 10; ! (access (!ivc_glob, f xy mod (Vector.length (!ivc_glob)))))
-    )
-  | _ => raise Msg "readcf"
-*)
-
 
 (* arithmetical operations *)
 fun constf c fl = (fn xy => (ct 1; c))
@@ -152,17 +118,18 @@ val run_time = ref 0
 fun mk_exec p = 
   let val f = mk_exec_unsafe p in 
     fn x => 
-      let val r = (timer := 0; f x 
+      let val r = (timer := 0; f x mod 2
    handle Div => default | Overflow => default | Check => default) 
       in
         run_time := !timer + !run_time; r
       end
   end
 
+(* for computing constants *)
 fun mk_exec_err p = 
   let val f = mk_exec_unsafe p in 
     fn x => 
-      let val r = (timer := 0; f x 
+      let val r = (timer := 0; f x
    handle Div => raise Msg "div" | Overflow => raise Msg "overflow" 
         | Check => raise Msg "check") 
       in
