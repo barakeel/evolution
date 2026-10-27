@@ -30,7 +30,7 @@ fun log_aux (i,di,wi,(pn,sc),scl) =
     val sclpos = filter (fn x => x > 0.5) scl
     val nex = length scl
     val acc = int_div (length sclpos) nex
-    val confl = map (fn (_,(_,_,x,y)) => !x + !y) (!cache_glob)
+    val confl = map (fn (_,(_,x,y)) => !x + !y) (!cache_glob)
     val conf = int_div (sum_int confl) nex
   in  
     pe (its i ^ ": " ^ "loss " ^ rts_pad 4 sc ^ 
@@ -58,7 +58,7 @@ fun stats_aux param loss (cachel,pfn) i =
     val t4 = int_div (!node_counter * 100) (size * i)
     val t5 = int_div (!node_dep_counter * 100) (size * !iter_dep_counter)
     val (losst,acct) = infer_test pfn (#exl param)
-    val confl = map (fn (_,(_,_,x,y)) => !x + !y) (!cache_glob)
+    val confl = map (fn (_,(_,x,y)) => !x + !y) (!cache_glob)
     val conf = int_div (sum_int confl) nex 
     val p = (! o #1) 
       (Vector.sub (Vector.sub (pfn, random_int (0,d-1)), random_int (0,w-1))) 
@@ -111,6 +111,7 @@ fun mutate_pn param i (pn,sc) =
       if sc' < sc - epsilon orelse (sc' < sc + epsilon andalso pt < oldpt) 
       then (
            if sc' < sc - epsilon then log (i,di,wi,(pn,sc'),scl) else ();
+           incr node_dep_counter;
            undol_glob := [];
            update_sdep (snd pn) (p,di,wi);
            sc'
@@ -181,7 +182,7 @@ val l2 = map stil (readl "aaa_test100");
 val (width,depth,rtmax) = (1024,4,3600.0);
 conf_penalty := 0.00001;
 PolyML.print_depth 2;
-val exl1 = vol_of_sentencel width (first_n 10 l2); (* ! *)
+val exl1 = ex_of_sentencel width (first_n 10 l2); (* ! *)
 length exl1;
 val r = time (run_single (width,depth,rtmax)) (exl1,[]);
 PolyML.print_depth 40;

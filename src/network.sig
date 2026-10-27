@@ -6,11 +6,11 @@ sig
   type prog = kernel.prog
   
   type 'a net = 'a vector vector
-  type cache = (int ref net * (int * int * int ref * int ref)) list
+  type ex = (int vector * (int * int ref * int ref)) list
+  type cache = (int ref net * (int * int ref * int ref)) list
   type pfn = (prog ref * exec ref * int ref * int list ref * int list ref) net
   type pn = cache * pfn
   type pnx = pn * real
-  type ex = (int vector * (int * int * int ref * int ref)) list
   
   val run_time : int ref
   val node_counter : int ref 
@@ -19,31 +19,53 @@ sig
   
   val flatten_pn : pn -> prog list
   val pn_compare : pn * pn -> order
+  
+  (* net primitives *)
   val width_of_net : 'a net -> int
   val depth_of_net : 'a net -> int
   val dim_of_net : 'a net -> int * int 
+  val net_app : ('a * int * int -> unit) -> 'a net -> unit
+  val net_sub : 'a net -> int * int -> 'a
+  val net_tab : int * int -> (int * int -> 'a) -> 'a net
   
-  (* input/output: includes loss and total time *)
-  (*
-  val write_pnx : string -> pnx -> unit
-  val read_pnx : string -> pnx
-  *)
-
+  val score_negpos : int * (int * int) -> real
+  
   (* running a program network without cache *) 
   val infer_test : pfn -> ex -> (real * real)
   
-  (* data collection *)
-  (*
-  val obj_network : int vector list ref
-  val access_network : int list list list ref
-  *)
-  (* example initialization *)
-  val vol_of_sentencel : int -> int list list -> ex
+  (* example init *)
+  val ex_of_sentencel : int -> int list list -> ex
+  val inputvl_of_ex : ex -> (int ref vector * int) list
+  val objl_of_ex : ex -> int list
+  val init_cache : ex -> pfn -> cache
+  val init_vcache : int * int -> int ref net
+  
+  (* program init *)
+  val random_pfn : int * int -> pfn
+ 
+  (* dependency graph *)
+  val recompute_alldep : pfn -> unit
+  val descendant : pfn -> (int * int list) -> (int * int list) list  
+    
+  (* computing a single node *)
+  val compute_node : 
+    int ref vector -> int ref vector vector -> pfn -> int -> int -> unit
+  val recompute_node : 
+    int ref vector -> int ref vector vector -> pfn -> (int * int) -> unit
+  val negpos_inputv :
+    pfn -> (int * int) list -> int ref vector -> int * int
+  val negpos_01 :  
+    pfn -> int * int -> int ref vector -> (int * int) * (int * int)
+  val score_01 : 
+    pfn -> int * int -> int ref vector * int -> real * real
+  val score_prog : 
+    pfn -> int * int -> int ref vector -> real * real -> prog -> real
+
     
   (* updating the network *)
   val undol_glob : (unit -> unit) list ref
   val cache_glob : cache ref
-  val init_cache : ex -> pfn -> cache
+  
   val score_pn : pn -> (real * real list)
   val random_pnx : int * int -> ex -> pnx
   val update_pn : pn -> (prog * int * int) -> unit

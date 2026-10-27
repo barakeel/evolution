@@ -26,24 +26,30 @@ fun ct n =
    Implementation of primitives
    -------------------------------------------------------------------------- *)
 
+val self_glob = ref 0
+
 val z_glob = ref default
 fun zf fl = fn xy => (ct 1; !z_glob)
 
 val xprev_glob = ref default
 fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 
+(* read from input layer *)
+val inputv_glob = ref (Vector.fromList [ref 0])
+fun access_input x = 
+  ! (Vector.sub (!inputv_glob, x mod (Vector.length (!inputv_glob))))
+
+fun inputf fl = case fl of
+    [f] => (fn xy => (ct 5; access_input (!self_glob + f xy)))
+  | _ => raise Msg "inputf"
+
 (* read from previous layer *)
-val iv_glob = ref (Vector.fromList [ref 0])
-fun access x = ! (Vector.sub (!iv_glob, x mod (Vector.length (!iv_glob))))
-
-fun readf fl = case fl of
-    [f] => (fn xy => (ct 5; access (f xy)))
-  | _ => raise Msg "readf"
-
-val self_glob = ref 0
+val layerv_glob = ref (Vector.fromList [ref 0])
+fun access_layer x = 
+  ! (Vector.sub (!layerv_glob, x mod (Vector.length (!layerv_glob))))
 
 fun readif fl = case fl of
-    [f] => (fn xy => (ct 5; access (!self_glob + f xy)))
+    [f] => (fn xy => (ct 5; access_layer (!self_glob + f xy)))
   | _ => raise Msg "readif"
 
 (* arithmetical operations *)
@@ -97,7 +103,7 @@ val execl =
   (addf, "+", 2),(difff, "-", 1), (multf, "mult", 2),
   (xvar, "x", 0),(yvar, "y", 0),
   (loop, "loop", 3),(cond, "cond", 3),
-  (zf, "z", 0) , (readif, "readi", 1)
+  (zf, "z", 0) , (readif, "readi", 1), (inputf, "input", 1)
   ]
 
 val execv = Vector.fromList execl
@@ -118,7 +124,7 @@ val run_time = ref 0
 fun mk_exec p = 
   let val f = mk_exec_unsafe p in 
     fn x => 
-      let val r = (timer := 0; f x mod 2
+      let val r = (timer := 0; (if f x > 0 then 1 else 0) 
    handle Div => default | Overflow => default | Check => default) 
       in
         run_time := !timer + !run_time; r
