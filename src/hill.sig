@@ -1,28 +1,20 @@
 signature hill =
 sig
 
-  type pnx = network.pnx
-  type ex = network.ex
-  type param =
-    {wid: int, exl: ex, exlt: ex,
-     rt: Timer.real_timer, rtmax: Time.time, share : bool} 
-  
-  (* logging *)
-  val log_time : real ref
-  val io_time : real ref
-  val expname : string ref 
-   
-  (* hill climbing *)
-  val hill : param -> pnx -> pnx
-  val run_single : (int * int * real) -> ex * ex -> pnx
-  (* val hill_para : string -> string *)
-  
-  (* wrappers *)
-  
-  
-  (* 
-  val run_para : int -> string -> ex -> (int * int * real)  -> real
-  val run_test : int -> string -> ex -> (int * int * real) list -> real list
-  *)
-  
+  type obj = exec.obj
+  type exec = exec.exec
+  type prog = kernel.prog
+
+  type 'a net = 'a vector vector
+  type iv = int ref vector
+  type ex = iv * int
+  type pfn = (prog ref * exec ref * int ref * int list ref * int list ref) net
+  type cache = int ref net
+  type node = int * int
+  type negpos = int * int
+
+  (* hill *)
+  val init_hill : int * int -> int list list -> pfn * ex list
+  val loop_hill : ex list -> pfn -> int -> unit
+
 end

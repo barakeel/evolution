@@ -207,21 +207,18 @@ fun score_negpos (obj,(negtop,postop)) =
     if total < epsilon then 0.5 else (r + !conf_penalty) / total
   end
 
-fun update_prog_partial pfn p (di,wi) = 
+fun update_prog_partial pfn (di,wi) (p,dep) = 
   let 
     val (pref,fref,_,incoming,_) = net_sub pfn (di,wi) 
     val pold = !pref
     val fold = !fref
     val incomingold = !incoming
     fun undo () = (pref := pold; fref := fold; incoming := incomingold)
-    (* stupid to recompute every time *)
-    val newincoming = dep_of_prog pfn (di,wi) p
   in
-    pref := p; fref := mk_exec p; incoming := newincoming;
-    undo
+    pref := p; fref := mk_exec p; incoming := dep; undo
   end
-  handle Subscript => raise Msg "update_prog_partial"
   
+(* these could probably work on a shared cache *)
 fun negpos_inputv pfn terminall inputv = 
   let 
     val (depth,width) = dim_of_net pfn
@@ -253,7 +250,6 @@ fun negpos_01 pfn (di,wi) inputv =
     (f 0, f 1)
   end; 
 
-
 fun score_01_aux (((negh,posh),obj),((neg0,pos0),(neg1,pos1))) = 
   (score_negpos (obj,(negh + neg0, posh + pos0)),
    score_negpos (obj,(negh + neg1, posh + pos1)));
@@ -264,30 +260,19 @@ fun score_01 pfn (di,wi) (inputv,obj) =
     val (depth,width) = dim_of_net pfn
     val allterminall = List.tabulate (width, fn i => (depth - 1,i));
     val base = negpos_inputv pfn allterminall inputv
-    (* val _ = pe ("base: " ^ npts base) *)
     val r = last (descendant pfn (di,[wi]))
     val terminall = map (fn x => (fst r, x)) (snd r)
     val diff = negpos_inputv pfn terminall inputv
-    (* val _ = pe ("diff: " ^ npts base) *)
     val hole = (fst base - fst diff, snd base - snd diff)
     val (negpos0,negpos1) = negpos_01 pfn (di,wi) inputv
-    (*
-    val _ = pe ("np0: " ^ npts negpos0)
-    val _ = pe ("np1: " ^ npts negpos1)
-    *)
   in
-    score_01_aux ((hole,obj),(negpos0,negpos1))
+    (negpos0 = negpos1, score_01_aux ((hole,obj),(negpos0,negpos1)))
   end
-  
-(* todo: don't rely on samish *)  
-fun sameish r1 r2 = Real.abs (r1 - r2) < epsilon  
 
-fun score_prog pfn (di,wi) (inputv,obj) (sc0,sc1) p =
-  if sameish sc0 sc1 then sc0 else
-  let 
-    val (depth,width) = dim_of_net pfn
-    val cache = init_cache (depth,width)
-    val undo = update_prog_partial pfn p (di,wi)
+fun score_prog cache pfn (di,wi) (inputv,obj) (b,(sc0,sc1)) (p,dep) =
+  if b then sc0 else
+  let
+    val undo = update_prog_partial pfn (di,wi) (p,dep) 
     val _ = recompute_node inputv cache pfn (di,wi)
             handle Subscript => raise Msg "recompute_node"
     val sc = (if ! (net_sub cache (di,wi)) = 0 then sc0 else sc1)
@@ -308,8 +293,9 @@ fun score_nodep pfn (inputv,obj) =
     fun f node = ! (net_sub cache node) 
     val vl = map_assoc f terminall
     val negpos = negpos_vl vl
+    val sc = score_negpos (obj, negpos)
   in
-    score_negpos (obj, negpos)
+    (sc,negpos)
   end
 
 

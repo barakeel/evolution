@@ -31,6 +31,7 @@ sig
   val init_cache : int * int -> cache
   
   (* dependency graph *)
+  val dep_of_prog : pfn -> node -> prog -> int list
   val descendant : pfn -> (int * int list) -> (int * int list) list  
   val update_sdep : pfn -> node -> unit
   val recompute_alldep : pfn -> unit
@@ -44,13 +45,9 @@ sig
  
   (* score *)
   val score_negpos : int * (int * int) -> real
-  val score_01 : pfn -> node -> ex -> real * real
-  val score_prog : pfn -> node -> ex -> real * real -> prog -> real
-  
-  (* hill *)
-  val init_hill : int * int -> int list list -> pfn * ex list
-  val loop_hill : ex list -> pfn -> int -> unit
-
-  
+  val score_01 : pfn -> node -> ex -> bool * (real * real)
+  val score_prog : cache -> pfn -> node -> ex -> bool * (real * real) -> 
+    (prog * int list) -> real
+  val score_nodep : pfn -> ex -> (real * negpos)
   
 end
