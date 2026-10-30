@@ -16,6 +16,9 @@ val node_counter = ref 0
 val node_dep_counter = ref 0
 val maxint = valOf Int.maxInt
 
+fun npts (n,p) = (its n ^ " " ^ its p)
+
+
 (* --------------------------------------------------------------------------
    Debugging
    -------------------------------------------------------------------------- *)
@@ -50,8 +53,6 @@ fun flatten_pn (_,pn) =
 
 fun pn_compare (pn1,pn2) = 
   list_compare prog_compare (flatten_pn pn1, flatten_pn pn2) 
-
-
 
 (* --------------------------------------------------------------------------
    Run program networks: programs have same depth index as their input.
@@ -121,7 +122,7 @@ fun score_negpos (obj,(negtop,postop)) =
     val total = neg + pos + 2.0 * !conf_penalty 
     val r = if obj > 0 then pos else neg   
   in
-    if total <= epsilon then 0.5 else (r + !conf_penalty) / total
+    if total < epsilon then 0.5 else (r + !conf_penalty) / total
   end
   
 fun score_obj pfn exi (iv,(obj,_,_)) = 
@@ -203,19 +204,33 @@ fun cache_of_ex (d,w) ex =
 
 val undol_glob = ref []
 
+fun init_vcache (d,w) = 
+  let
+    val maxint = valOf (Int.maxInt)
+    fun f di = Vector.tabulate (w, fn wi => ref maxint)
+    val pfn = Vector.tabulate (d, f) 
+  in
+    pfn
+  end;
+
+fun negpos_vl l =
+  let
+    fun f (neg,pos) ((di,wi),out) =
+      if out <= 0 then () else 
+      if wi mod 2 = 0 then incr neg else incr pos
+    val (neg,pos) = (ref 0, ref 0)
+    val _ = app (f (neg,pos)) l
+  in
+    (!neg,!pos)
+  end
+
 (* --------------------------------------------------------------------------
    Computing a node
    -------------------------------------------------------------------------- *)
 
-
-fun compute_node inputv cache pfn di wi =
-  let val x = ! (net_sub cache (di,wi)) 
-    handle Subscript => raise Msg (its di ^ " " ^ its wi) 
-  in 
-    if x <> maxint then () else
+fun compute_node_once inputv cache pfn (di,wi) =
   let 
-    val (pref,fref,_,incoming,_) = Vector.sub(Vector.sub(pfn,di),wi)
-    val _ = app (compute_node inputv cache pfn (di-1)) (!incoming) 
+    val (pref,fref,_,_,_) = net_sub pfn (di,wi) 
     val (d,w) = dim_of_net cache
     val ov = Vector.sub(cache,di)
     val _ = inputv_glob := inputv
@@ -236,8 +251,35 @@ fun compute_node inputv cache pfn di wi =
     *)
   in
     oref := onew
-  end end
+  end
 
+fun score_nodep pfn (inputv,obj) =
+  let 
+    val (depth,width) = dim_of_net pfn
+    val nodel = cartesian_product 
+      (List.tabulate (depth,I)) (List.tabulate (width,I))
+    val cache = init_vcache (depth,width)
+    val terminall = List.tabulate (width, fn wi => (depth - 1, wi))
+    val _ = app (compute_node_once inputv cache pfn) nodel
+    fun f node = ! (net_sub cache node) 
+    val vl = map_assoc f terminall
+    val negpos = negpos_vl vl
+    (* val _ = pe ("nodep: " ^ npts negpos) *)
+  in
+    score_negpos (obj, negpos)
+  end
+
+(* recursively compute nodes and their dependencies *)
+fun compute_node inputv cache pfn di wi =
+  if ! (net_sub cache (di,wi)) <> maxint then () else
+  let 
+    val (_,_,_,incoming,_) = Vector.sub(Vector.sub(pfn,di),wi)
+    val _ = app (compute_node inputv cache pfn (di-1)) (!incoming) 
+  in
+    compute_node_once inputv cache pfn (di,wi)
+  end
+
+(* recompute the node and dependencies if they have not been computed yet *)
 fun recompute_node inputv cache pfn (di,wi) =
   let val x = net_sub cache (di,wi) in 
     x := maxint; compute_node inputv cache pfn di wi
@@ -343,22 +385,23 @@ fun update_cache (cachel,pfn) (di,wil) =
 number of connections *)
 
 fun rm_sedge pfn (d',w) wi =
-  let val (_,_,_,_,outgoing) = Vector.sub (Vector.sub (pfn,d'),wi) in
+  let val (_,_,_,_,outgoing) = net_sub pfn (d',wi) in
     outgoing := filter (fn x => x <> w) (!outgoing)
   end
 
 fun add_sedge pfn (d',w) wi = 
-  let val (_,_,_,_,outgoing) = Vector.sub (Vector.sub (pfn,d'),wi) in
+  let val (_,_,_,_,outgoing) = net_sub pfn (d',wi) in
     if mem w (!outgoing) then () else outgoing := w :: !outgoing
   end
 
-fun update_sdep pfn (p,di,wi) =
+fun update_sdep pfn (di,wi) =
   if di <= 0 then () else
   let 
     val w = width_of_net pfn
+    val (pref,_,_,incoming,_) = net_sub pfn (di,wi) 
     val newincoming = mk_fast_set Int.compare 
-      (map (fn x => (x + wi) mod w) (collect_readargl p))
-    val (_,_,_,incoming,_) = Vector.sub (Vector.sub (pfn,di),wi) 
+      (map (fn x => (x + wi) mod w) (collect_readargl (!pref)))
+    (* val _ = pe (ilts newincoming) *)
     val oldincoming = !incoming  
   in  
     incoming := newincoming;
@@ -367,9 +410,7 @@ fun update_sdep pfn (p,di,wi) =
   end
 
 fun recompute_alldep pfn = 
-  let fun f (x,di,wi) = 
-    if di <= 0 then () else update_sdep pfn (! (#1 x),di,wi) 
-  in
+  let fun f (_,di,wi) = update_sdep pfn (di,wi) in
     net_app f pfn
   end
   
@@ -441,14 +482,7 @@ fun random_pfn (d,w) =
     net_tab (d,w) f
   end
 
-fun init_vcache (d,w) = 
-  let
-    val maxint = valOf (Int.maxInt)
-    fun f di = Vector.tabulate (w, fn wi => ref maxint)
-    val pfn = Vector.tabulate (d, f) 
-  in
-    pfn
-  end;
+
 
 fun random_pnx (d,w) ex =
   let 
@@ -474,24 +508,32 @@ fun random_pnx (d,w) ex =
    Compute negpos score for a list of terminal nodes and an input example
    -------------------------------------------------------------------------- *)
 
-fun negpos_vl l =
-  let
-    fun f (neg,pos) a b = 
-      if a mod 2 = 0 
-      then (if b <= 0 then incr neg else ())
-      else (if b > 0 then incr pos else ());   
-    val (neg,pos) = (ref 0, ref 0)
-    val _ = appi (f (neg,pos)) l
+fun update_prog pfn p (di,wi) = 
+  let 
+    val (pref,fref,tref,incoming,outgoing) = net_sub pfn (di,wi) 
+    val pold = !pref
+    val fold = !fref
+    val told = !tref
+    val incomingold = !incoming
+    val outgoingold = !outgoing
+    fun undo () = 
+      (pref := pold; fref := fold; tref := told; 
+       incoming := incomingold;
+       outgoing := outgoingold)
   in
-    (!neg,!pos)
+    pref := p; fref := mk_exec p; 
+    update_sdep pfn (di,wi);
+    undo
   end
+
+
 
 fun negpos_inputv pfn terminall inputv = 
   let 
     val (depth,width) = dim_of_net pfn
     val cache = init_vcache (depth,width);
     val _ = app (recompute_node inputv cache pfn) terminall
-    val vl = map (! o net_sub cache) terminall
+    val vl = map_assoc (! o net_sub cache) terminall
   in
     negpos_vl vl
   end;
@@ -509,7 +551,7 @@ fun negpos_01 pfn (di,wi) inputv =
       let 
         val _ = x := a
         val _ = app (recompute_node inputv cache pfn) (tl nodel)
-        val vl = map (! o net_sub cache) terminall
+        val vl = map_assoc (! o net_sub cache) terminall
       in
         negpos_vl vl
       end
@@ -522,55 +564,156 @@ fun score_01_aux (((negh,posh),obj),((neg0,pos0),(neg1,pos1))) =
   (score_negpos (obj,(negh + neg0, posh + pos0)),
    score_negpos (obj,(negh + neg1, posh + pos1)));
 
+
 fun score_01 pfn (di,wi) (inputv,obj) = 
   let 
     val (depth,width) = dim_of_net pfn
     val allterminall = List.tabulate (width, fn i => (depth - 1,i));
     val base = negpos_inputv pfn allterminall inputv
+    (* val _ = pe ("base: " ^ npts base) *)
     val r = last (descendant pfn (di,[wi]))
     val terminall = map (fn x => (fst r, x)) (snd r)
     val diff = negpos_inputv pfn terminall inputv
+    (* val _ = pe ("diff: " ^ npts base) *)
     val hole = (fst base - fst diff, snd base - snd diff)
     val (negpos0,negpos1) = negpos_01 pfn (di,wi) inputv
+    (*
+    val _ = pe ("np0: " ^ npts negpos0)
+    val _ = pe ("np1: " ^ npts negpos1)
+    *)
   in
     score_01_aux ((hole,obj),(negpos0,negpos1))
   end
   
-fun score_prog pfn (di,wi) inputv (sc0,sc1) p =
-  if Real.abs (sc0 - sc1) < epsilon then sc0 else
+fun score_prog_full pfn (di,wi) (inputv,obj) p =   
+  let
+    val (depth,width) = dim_of_net pfn
+    val cache = init_vcache (depth,width)
+    val undo = update_prog pfn p (di,wi)
+    val terminall = List.tabulate (width, fn i => (depth - 1,i));
+    val negpos = negpos_inputv pfn terminall inputv
+    val _ = undo ()
+  in
+    score_negpos (obj,negpos)
+  end
+  
+fun sameish r1 r2 = Real.abs (r1 - r2) < epsilon  
+  
+  
+  
+fun score_prog pfn (di,wi) (inputv,obj) (sc0,sc1) p =
+  if sameish sc0 sc1 then sc0 else
   let 
     val (depth,width) = dim_of_net pfn
     val cache = init_vcache (depth,width)
-    val fref = #2 (net_sub pfn (di,wi))
-    val fold = !fref
-    val _ = fref := mk_exec p (* todo: precompute f *)
+    val undo = update_prog pfn p (di,wi)
     val _ = recompute_node inputv cache pfn (di,wi)
-    val _ = fref := fold
-    val sc = if ! (net_sub cache (di,wi)) = 0 then sc0 else sc1 
+    val sc = if ! (net_sub cache (di,wi)) = 0 then sc0 else sc1
+    (* val scfull  = score_prog_full pfn (di,wi) (inputv,obj) p *)
+    val _ = undo ()
+    (* val undo = update_prog pfn p (di,wi)
+       val scfull  = score_nodep pfn (inputv,obj)
+       val _ = undo () *)
   in
-    sc
+    sc 
+    (* 
+    if sameish sc scfull 
+    then sc 
+    else raise Msg ("score_prog: " ^ rts_pad 4 sc ^ " " ^ rts_pad 4 scfull)
+    *)
+  end
+  
+
+(* --------------------------------------------------------------------------
+   Hill climbing loop
+   -------------------------------------------------------------------------- *)
+
+fun init_hill (depth,width) sentencel =
+  let 
+    val pfn = random_pfn (depth,width);
+    val _ = recompute_alldep pfn;
+    val ex = ex_of_sentencel width sentencel;
+    val inputvl = inputvl_of_ex ex
+  in
+    (pfn,inputvl)
   end
 
+fun random_node (depth,width) = 
+  (random_int (0,depth-1), random_int (0,width -1))
+  
+fun list_radd (x:real list) (y:real list) = 
+  map (fn (x,y) => x + y) (combine (x,y));   
+
+fun loop_hill_aux rt inputvl pfn scold nprog n =
+  let 
+    val (depth,width) = dim_of_net pfn
+    val (di,wi) = random_node (depth,width)
+    val p = ! (#1 (net_sub pfn (di,wi)))
+    val progl = mk_fast_set prog_compare_size (* [p] *)
+      (p :: (List.tabulate (nprog, !random_prog_glob)))
+    val scorel_glob = ref (List.tabulate (length progl, fn _ => 0.0))
+    fun f inputvo = 
+      let 
+        val (sc0,sc1) = score_01 pfn (di,wi) inputvo
+        val r = map (score_prog pfn (di,wi) inputvo (sc0,sc1)) progl
+      in
+        scorel_glob := list_radd r (!scorel_glob)
+      end
+    val _ = app f inputvl
+    val r = combine (progl,!scorel_glob)
+    val scnew = dfind p (dnew prog_compare r) 
+    val _ = 
+      if scold <= 0.0 then ()
+      else if sameish scold scnew then () 
+      else raise Msg ("loop_hill: " ^ rts_pad 4 scold ^ " " ^ rts_pad 4 scnew)
+    val (prog,sc) = hd (dict_sort compare_rmax r)
+    val _ = if sc < scold - epsilon 
+            then raise Msg "loop_hill"
+            else ()
+    val _ = pe (its n ^ ": " ^ 
+      rts_pad 4 (sc / Real.fromInt (length inputvl)) (* to optimize ? *)
+      ^ " " ^ its di ^ "-" ^ its wi)
+    val _ = update_prog pfn prog (di,wi)
+    val t = Time.toReal (Timer.checkRealTimer rt) / Real.fromInt n
+    val _ =  if n mod 100 <> 0 then () else
+      pe (its n ^ " : average time " ^ rts_pad 2 (t * 1000.0) ^ " ms")
+  in
+    loop_hill_aux rt inputvl pfn sc nprog (n + 1)
+  end
+
+fun loop_hill inputvl pfn nprog =
+  loop_hill_aux (Timer.startRealTimer ()) inputvl pfn 0.0 nprog 1;
 
 end (* struct *)
 
 (*
 load "network"; open aiLib kernel exec prog network;
 
-val targetl1 = [0,1,1,0,0,1];
-val (depth,width) = (4,20);
-val (di,wi) = (1,1);
-val pfn = random_pfn (depth,width);
-val _ = recompute_alldep pfn;
-val ex = ex_of_sentencel width [targetl1];
-val inputvl = inputvl_of_ex ex;
-val (inputv,obj) = hd inputvl;
-val (sc0,sc1) = score_01 pfn (di,wi) (inputv,obj);
-
-val progl10 = List.tabulate (100, !random_prog_glob);
-val r = map (score_prog pfn (di,wi) inputv (sc0,sc1)) progl10;
+val sentencel = [[1,0,1,1,0,1]];
+val (depth,width) = (4,10);
+val (pfn,inputvl) = init_hill (depth,width) sentencel;
+val nprog = 1000;
+time (loop_hill inputvl pfn) nprog;
 
 
+
+
+  
+
+
+then print the loss/accuracy/confidence and repeat.
+
+
+todo: 
+1) unify the cache 
+2) keep a running score for each program that is the sum of all the previous
+   scores (maybe average them in the end for nice human look)
+3) choose the program with the best score 
+   (maybe later early give up for programs that will never catch up 
+    or a competition style tournament)
+4) use integer scores to be able to compare identical scores instead of relying
+on epsilon.
+5) 
 
 
 *)

@@ -48,8 +48,6 @@ sig
   val descendant : pfn -> (int * int list) -> (int * int list) list  
     
   (* computing a single node *)
-  val compute_node : 
-    int ref vector -> int ref vector vector -> pfn -> int -> int -> unit
   val recompute_node : 
     int ref vector -> int ref vector vector -> pfn -> (int * int) -> unit
   val negpos_inputv :
@@ -59,7 +57,10 @@ sig
   val score_01 : 
     pfn -> int * int -> int ref vector * int -> real * real
   val score_prog : 
-    pfn -> int * int -> int ref vector -> real * real -> prog -> real
+    pfn -> int * int -> int ref vector * int -> real * real -> prog -> real
+  val init_hill : int * int -> int list list -> pfn * (int ref vector * int) list
+  val loop_hill :  (int ref vector * int) list -> pfn -> int -> unit
+
 
     
   (* updating the network *)
@@ -69,6 +70,6 @@ sig
   val score_pn : pn -> (real * real list)
   val random_pnx : int * int -> ex -> pnx
   val update_pn : pn -> (prog * int * int) -> unit
-  val update_sdep : pfn -> (prog * int * int) -> unit
+  val update_sdep : pfn -> (int * int) -> unit
   
 end
