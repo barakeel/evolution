@@ -56,9 +56,15 @@ val pe = print_endline
 val cws = String.concatWith " "
 val tws = String.tokens Char.isSpace
 
+fun lts sl = if null sl then "@" else String.concatWith "," sl
+fun stl s = if s = "@" then [] else String.tokens (fn x => x = #",") s
+
 fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
   handle HOL_ERR _ => raise Msg ("split_pair: " ^ Char.toString c ^ " " ^ s)
 
+fun split_triple c s = triple_of_list (String.tokens (fn x => x = c) s)
+  handle HOL_ERR _ => raise Msg ("split_triple: " ^ Char.toString c ^ " " ^ s)
+  
 fun rts_pad n t =
   let val n' = 
     n + 1 + (if t < 10.0 then 1 else 1 + Real.floor (Math.log10 t)) 
