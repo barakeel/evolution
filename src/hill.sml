@@ -15,6 +15,8 @@ val minor_timer = ref 0.0
 val init_timer = ref 0.0
 val gen_timer = ref 0.0
 val npl_timer = ref 0.0
+val stats_freq = ref 1000
+
 
 val timerl = [
   ("sc01", score01_timer),
@@ -74,7 +76,7 @@ fun confidence npscl nex =
 fun hscore sc nex = (int_div sc scaling) / (Real.fromInt nex)
 
 fun stats_hill nprog rt (exl,nex) pfn n sc =
-  if n mod 10000 <> 0 then () else
+  if n mod !stats_freq <> 0 then () else
   let
     val npscl = map (score_nodep pfn) exl
     val sctrue = sum_int (map snd npscl)
@@ -82,7 +84,7 @@ fun stats_hill nprog rt (exl,nex) pfn n sc =
     val acc = accuracy npscl nex
     val conf = confidence npscl nex
     val _  = 
-      if !local_flag orelse sc = sctrue then () else 
+      if sc = sctrue then () else 
       raise Msg ("mismatch: optimized" ^ its sc ^ ", basic " ^ its sctrue)
     val ku = Real.round (int_div (!run_time) (n * 1000))
     val t = Time.toReal (Timer.checkRealTimer rt)
@@ -102,15 +104,14 @@ fun stats_hill nprog rt (exl,nex) pfn n sc =
    end
 
 fun report n sc scold nex npscl (di,wi) = 
-  if not (!local_flag) andalso sc = scold then () else 
+  if sc = scold then () else 
   let 
     val hsc = hscore sc nex
-    val acc = if !local_flag then 0.0 else accuracy npscl nex
-    val conf = if !local_flag then 0.0 else confidence npscl nex
+    val acc = accuracy npscl nex
+    val conf = confidence npscl nex
   in 
     pe (its n ^ ": " ^ 
-    "sc " ^ r4 hsc ^ 
-    (if !local_flag then "" else ", acc " ^ r4 acc ^ ", conf " ^ r4 conf) ^ 
+    "sc " ^ r4 hsc ^ ", acc " ^ r4 acc ^ ", conf " ^ r4 conf ^ 
     ", node " ^ nts (di,wi))
   end
 
@@ -183,77 +184,6 @@ fun npscl_of_winner cache pfn (di,wi) exl npscl01 winner =
   end
 
 (* --------------------------------------------------------------------------
-   Main computation in parallel (should be its own file)
-   -------------------------------------------------------------------------- *)
- 
-val sti = string_to_int 
- 
-fun write_pl file pl = writel file (map (infts o zip_prog) pl)
-fun read_pl file = map (unzip_prog o stinf) (readl file) 
- 
-fun write_npl file npl = writel file (map npts npl)
-fun read_np s = 
-  let val (n,p) = split_pair #"_" s in (string_to_int n, string_to_int p) end
-fun read_npl file = map read_np (readl file)
-
-
-fun write_npsc01 ((np0,np1),(sc0,sc1)) = 
-  npts np0 ^ "-" ^ npts np1 ^ "-" ^ its sc0 ^ "-" ^ its sc1
-fun write_npscl01 npscl01 = lts (map out_npsc01 npscl01)
-
-fun read_npsc01 s = 
-  let val (s1,s2,s3,s4) = 
-    quadruple_of_list (String.tokens (fn x => x = #"-") s)
-  in
-    ((read_np s1, read_np s2), (sti s3, sti s4))
-  end
-fun read_npscl01 s = map read_npsc01 (stl s)  
-  
-
-fun write_score (sc,t) = its sc ^ "-" ^ its t
-fun write_scorel scorel = lts (map out_score scorel) 
-
-fun read_score s = 
-  let val (s1,s2) = split_pair #"-" s in (sti s1, sti s2) end
-fun read_scorel s = map read_score (stl s)
-  
-fun read_node s = 
-  let val (s1,s2) = split_pair #"-" s in (sti s1, sti s2) end
-
-fun compute_scorel_para s =
-  let 
-    val pfn = read_pfn "aaa_pfn"
-    val pl = read_pl "aaa_pl"
-    val cache = init_cache pfn
-    val exl = read_exl "aaa_exl"
-    val nplold = read_npl "aaa_npl"
-    val (s1,s2) = split_pair #"-" s
-    val (di,wi) = (string_to_int s1, string_to_int s2)
-    fun f p = (p, dep_of_prog pfn (di,wi) p, mk_exec p)
-    val pdel = total_time gen_timer (map f) pl
-    val scorel = ref (List.tabulate (length pdel, fn _ => (0,0)))
-    fun f (np,ex) = 
-      let
-        val npsc = total_time score01_timer 
-          (score_01 cache pfn np (di,wi)) ex
-        val restore = save_node pfn (di,wi)
-        val r = total_time scoreprog_timer 
-          (map (score_prog cache pfn (di,wi) ex npsc)) pdel
-        val _ = (apply_undo (); restore ())
-      in
-        scorel := list_add2 r (!scorel); npsc
-      end
-    val _ = reset_flag := true
-    val npscl01 = map f (combine (nplold,exl))
-    val _ = reset_flag := false
-  in
-    write_npscl01 npscl01 ^ "|" ^ write_scorel (!scorel)
-  end 
-
-fun process_out s =
-  let val (s1,s2) = split_pair #"|" s in (read_npscl01 s1, read_scorel s2) end
-
-(* --------------------------------------------------------------------------
    Hill climbing loop
    --------------------------------------------------------------------------*) 
 
@@ -265,15 +195,10 @@ fun loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplold scold n =
     fun f () = mk_fast_set prog_compare_size
       (p :: (List.tabulate (nprog, !random_prog_glob)))
     val progl = total_time gen_timer f ()
+    val npexl = combine (nplold,exl)
     fun f p = (p, dep_of_prog pfn (di,wi) p, mk_exec p)
     val pdel = total_time gen_timer (map f) progl
-    val candl = 
-      if !local_flag 
-      then random_subset 100 (combine (nplold,exl))
-      else combine (nplold,exl)
-    val (npscl01,scorel) = 
-      if ncore >= 2 then
-      compute_scorel cache pfn (di,wi) pdel candl
+    val (npscl01,scorel) = compute_scorel cache pfn (di,wi) pdel npexl
     fun f () =
       let val cmp = 
         snd_compare (cpl_compare (inv_cmp Int.compare) Int.compare) 
@@ -281,14 +206,14 @@ fun loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplold scold n =
         hd (dict_sort cmp (combine (progl,scorel))) 
       end
     val (winner,(sc,_)) = total_time minor_timer f ()
-    val npscl = if !local_flag then [] else total_time npl_timer 
+    val npscl = total_time npl_timer 
       (npscl_of_winner cache pfn (di,wi) exl npscl01) winner
     val _ = total_time minor_timer 
       (report n sc scold nex npscl) (di,wi)
     val _ = update_prog pfn winner (di,wi)
     val _ = prog_glob := winner
     val _ = total_time stats_timer (stats_hill nprog rt (exl,nex) pfn n) sc
-    val nplnew = if !local_flag then nplold else map fst npscl
+    val nplnew = map fst npscl
   in 
     loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplnew sc (n + 1)
   end
@@ -317,7 +242,7 @@ val sentencel = map stil (readl "aaa_test100");
 val (depth,width) = (4,1024);
 val nprog = 100;
 val ncore = 1;
-val init = init_hill (depth,width) (first_n 10 sentencel);
+val init = init_hill (depth,width) sentencel;
 PolyML.print_depth 40;
 
 time (loop_hill ncore nprog) init;

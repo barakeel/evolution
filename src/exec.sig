@@ -9,7 +9,7 @@ sig
   val default : obj
   
   (* memory access *)
-  val inputv_glob: (obj ref) vector ref
+  val inputv_glob: obj vector ref
   val layerv_glob: (obj ref) vector ref
   val access_layer : int -> obj
   val z_glob : obj ref

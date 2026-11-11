@@ -35,9 +35,9 @@ val xprev_glob = ref default
 fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 
 (* read from input layer *)
-val inputv_glob = ref (Vector.fromList [ref 0])
-fun access_input x = 
-  ! (Vector.sub (!inputv_glob, x mod (Vector.length (!inputv_glob))))
+val inputv_glob = ref (Vector.fromList [0])
+fun access_input x =  
+  Vector.sub (!inputv_glob, x mod (Vector.length (!inputv_glob)))
 
 fun inputf fl = case fl of
     [f] => (fn xy => (ct 5; access_input (!self_glob + f xy)))

@@ -109,30 +109,15 @@ fun exl_of_sentence w sentence =
   let 
     val obj = hd sentence
     val objm = tl sentence
-    val pobjv = Vector.fromList (0 :: 1 :: 1 :: 1 :: objm)
-    val m = Vector.length pobjv
-    fun f i = ref (Vector.sub (pobjv, i mod m))
+    val pobjv = Vector.fromList (0 :: 0 :: 0 :: 0 :: objm)
   in
-    (Vector.tabulate (w,f), obj)
+    (pobjv, obj)
   end  
 
 fun ex_of_sentencel w l = 
   let fun f ex = map (exl_of_sentence w) (all_rev_prefixes ex) in  
     List.concat (map f l)
   end
-
-fun write_ex (iv,obj) = 
-  String.concatWith "," (its obj :: map (its o !) (vector_to_list iv))
-
-fun write_exl file exl = writel file (map write_ex exl)
-
-fun read_ex s = 
-  let val sl = String.tokens (fn x => x = #",") s in
-    (Vector.fromList (map (ref o string_to_int) (tl sl)), 
-     string_to_int (hd sl))
-  end
-  
-fun read_exl file = map read_ex (readl file)
 
 (* --------------------------------------------------------------------------
    Computing a node and its dependencies
@@ -292,8 +277,6 @@ fun negpos_01 cache pfn (di,wi) inputv (nodel,tnodel) npd =
     r
   end
 
-val local_flag = ref false
-
 fun score_01 cache pfn (nb,pb) (di,wi) (inputv,obj) = 
   let 
     val (depth,width) = dim_of_net pfn
@@ -305,12 +288,10 @@ fun score_01 cache pfn (nb,pb) (di,wi) (inputv,obj) =
     val (nh,ph) = (nb - nd, pb - pd)
     val ((n0,p0),(n1,p1)) = 
       negpos_01 cache pfn (di,wi) inputv (nodel,tnodel) (nd,pd)
-    val np0 = if !local_flag then (n0,p0) else (nh + n0, ph + p0) 
-    val np1 = if !local_flag then (n1,p1) else (nh + n1, ph + p1) 
-    val sc0 = if !local_flag then score_negpos2 (obj,np0) 
-      else score_negpos (obj,np0)
-    val sc1 = if !local_flag then score_negpos2 (obj,np1) 
-      else score_negpos (obj,np1)
+    val np0 = (nh + n0, ph + p0) 
+    val np1 = (nh + n1, ph + p1) 
+    val sc0 = score_negpos (obj,np0)
+    val sc1 = score_negpos (obj,np1)
   in
     ((np0,np1),(sc0,sc1))
   end

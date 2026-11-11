@@ -13,8 +13,6 @@ sig
   type node = int * int
   type negpos = int * int
 
-  val local_flag : bool ref
-
   (* stats *)
   val prog_skip : int ref
   val scaling : int
@@ -36,8 +34,6 @@ sig
   val init_pfn : int * int -> pfn
   val cache_empty : int
   val init_cache : pfn -> cache
-  val write_exl : string -> ex list -> unit
-  val read_exl : string -> ex list
   
   (* dependency graph *)
   val dep_of_prog : pfn -> node -> prog -> int list
