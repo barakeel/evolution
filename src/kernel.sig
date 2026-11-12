@@ -36,6 +36,7 @@ sig
   val rts_pad : int -> real -> string
   val lts : string list -> string
   val stl : string -> string list
+  val sti : string -> int
   
   (* list tools *)
   val range : int * int * (int -> 'a) -> 'a list

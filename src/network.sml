@@ -4,7 +4,7 @@ struct
 open HolKernel aiLib kernel sexp exec prog
 
 type 'a net = 'a vector vector
-type iv = int ref vector
+type iv = int -> int
 type ex = iv * int
 type cache = int ref net
 type pfn = (prog ref * exec ref * int list ref * int list ref) net
@@ -98,26 +98,18 @@ fun read_pfn file = Vector.fromList (map read_pv (readl file))
 (* --------------------------------------------------------------------------
    Initialize examples
    -------------------------------------------------------------------------- *)
- 
-fun all_suffixes objl = case objl of 
-    [] => [] 
-  | a :: m => objl :: all_suffixes m 
 
-fun all_rev_prefixes objl = rev (all_suffixes (rev objl));
- 
-fun exl_of_sentence w sentence = 
+fun ex_of_sentence sentence = 
   let 
-    val obj = hd sentence
-    val objm = tl sentence
-    val pobjv = Vector.fromList (0 :: 0 :: 0 :: 0 :: objm)
+    val sentencev = Vector.fromList (0 :: 0 :: 0 :: 0 :: sentence)
+    fun f i = if i < 4 then NONE else
+      SOME (fn x => Vector.sub (sentencev, x mod i), Vector.sub (sentencev, i))
   in
-    (pobjv, obj)
-  end  
-
-fun ex_of_sentencel w l = 
-  let fun f ex = map (exl_of_sentence w) (all_rev_prefixes ex) in  
-    List.concat (map f l)
+    List.mapPartial I (List.tabulate (Vector.length sentencev,f))
   end
+
+fun ex_of_sentencel sentencel = 
+  List.concat (map ex_of_sentence sentencel)
 
 (* --------------------------------------------------------------------------
    Computing a node and its dependencies
@@ -127,15 +119,17 @@ val reset_flag = ref false
 val resetl_glob = ref []
 val cache_empty = valOf Int.maxInt
 
-fun compute_node_once inputv cache pfn (di,wi) =
+fun compute_node_once inputf cache pfn (di,wi) =
   let
-    val _ = inputv_glob := inputv
-    val _ = layerv_glob := (if di = 0 then inputv else Vector.sub(cache,di-1))
+    val _ = inputf_glob := inputf    
+    val _ = layerf_glob := 
+      (if di = 0 then inputf else    
+       (layerv_glob := Vector.sub(cache,di-1); access_layer))
     val _ = self_glob := wi
     val (d,w) = dim_of_net cache
-    val i1 = ! (Vector.sub (!layerv_glob, (wi - 1) mod w))
-    val i2 = ! (Vector.sub (!layerv_glob, (wi + 1) mod w))
-    val _ = z_glob := ! (Vector.sub (!layerv_glob, wi))
+    val i1 = (!layerf_glob) (wi - 1)
+    val i2 = (!layerf_glob) (wi + 1)
+    val _ = z_glob := (!layerf_glob) wi
     val fref = #2 (net_sub pfn (di,wi))
     val onew = (!fref) (i1,i2)
     val oref = net_sub cache (di,wi)
@@ -145,25 +139,25 @@ fun compute_node_once inputv cache pfn (di,wi) =
     oref := onew
   end
 
-fun compute_node inputv cache pfn di wi =
+fun compute_node inputf cache pfn di wi =
   if ! (net_sub cache (di,wi)) <> cache_empty then () else
   let 
     val incoming = #3 (net_sub pfn (di,wi))
-    val _ = app (compute_node inputv cache pfn (di-1)) (!incoming) 
+    val _ = app (compute_node inputf cache pfn (di-1)) (!incoming) 
   in
-    compute_node_once inputv cache pfn (di,wi)
+    compute_node_once inputf cache pfn (di,wi)
   end
 
-fun recompute_node_unit inputv cache pfn (di,wi) =
+fun recompute_node_unit inputf cache pfn (di,wi) =
   let val x = net_sub cache (di,wi) in 
     x := cache_empty; 
-    compute_node inputv cache pfn di wi
+    compute_node inputf cache pfn di wi
   end
   
-fun recompute_node inputv cache pfn (di,wi) =
+fun recompute_node inputf cache pfn (di,wi) =
   let val x = net_sub cache (di,wi) in 
     x := cache_empty; 
-    compute_node inputv cache pfn di wi;
+    compute_node inputf cache pfn di wi;
     !x
   end
   
@@ -256,17 +250,17 @@ fun score_negpos2 (obj,(neg,pos)) =
    Compute what would be the score if the output of a program was 0 or 1
    -------------------------------------------------------------------------- *)
 
-fun negpos_inputv cache pfn tnodel inputv = 
-  negpos_vl (map_assoc (recompute_node inputv cache pfn) tnodel)
+fun negpos_inputf cache pfn tnodel inputf = 
+  negpos_vl (map_assoc (recompute_node inputf cache pfn) tnodel)
   
-fun negpos_01 cache pfn (di,wi) inputv (nodel,tnodel) npd =
+fun negpos_01 cache pfn (di,wi) inputf (nodel,tnodel) npd =
   let
     val x = net_sub cache (hd nodel)
     val xold = !x    
     fun f a = 
       let 
         val _ = x := a
-        val _ = app (recompute_node_unit inputv cache pfn) (tl nodel)
+        val _ = app (recompute_node_unit inputf cache pfn) (tl nodel)
         val vl = map_assoc (! o net_sub cache) tnodel
       in
         negpos_vl vl
@@ -277,17 +271,17 @@ fun negpos_01 cache pfn (di,wi) inputv (nodel,tnodel) npd =
     r
   end
 
-fun score_01 cache pfn (nb,pb) (di,wi) (inputv,obj) = 
+fun score_01 cache pfn (nb,pb) (di,wi) (inputf,obj) = 
   let 
     val (depth,width) = dim_of_net pfn
     val descl = descendant pfn (di,[wi])
     val nodel = distrib descl
     val tnodeline = last descl
     val tnodel = map (fn x => (fst tnodeline, x)) (snd tnodeline)
-    val (nd,pd) = negpos_inputv cache pfn tnodel inputv
+    val (nd,pd) = negpos_inputf cache pfn tnodel inputf
     val (nh,ph) = (nb - nd, pb - pd)
     val ((n0,p0),(n1,p1)) = 
-      negpos_01 cache pfn (di,wi) inputv (nodel,tnodel) (nd,pd)
+      negpos_01 cache pfn (di,wi) inputf (nodel,tnodel) (nd,pd)
     val np0 = (nh + n0, ph + p0) 
     val np1 = (nh + n1, ph + p1) 
     val sc0 = score_negpos (obj,np0)
@@ -307,13 +301,13 @@ fun update_prog_partial pfn (di,wi) (p,dep,exec) =
 
 val prog_skip = ref 0
 
-fun score_prog cache pfn (di,wi) (inputv,obj) 
+fun score_prog cache pfn (di,wi) (inputf,obj) 
   ((np0,np1),(sc0,sc1)) (p,dep,exec) =
   if sc0 = sc1 then (incr prog_skip; (sc0, 0)) else
   let
     val _ = update_prog_partial pfn (di,wi) (p,dep,exec) 
     val told = !run_time
-    val x = recompute_node inputv cache pfn (di,wi)
+    val x = recompute_node inputf cache pfn (di,wi)
     val tdiff = !run_time - told
     val sc = if x = 0 then sc0 else sc1
   in
@@ -324,14 +318,14 @@ fun score_prog cache pfn (di,wi) (inputv,obj)
    Reference implementation with no optimizations
    -------------------------------------------------------------------------- *)
 
-fun score_nodep pfn (inputv,obj) =
+fun score_nodep pfn (inputf,obj) =
   let 
     val (depth,width) = dim_of_net pfn
     val nodel = cartesian_product 
       (List.tabulate (depth,I)) (List.tabulate (width,I))
     val cache = init_cache pfn
     val tnodel = List.tabulate (width, fn wi => (depth - 1, wi))
-    val _ = app (compute_node_once inputv cache pfn) nodel
+    val _ = app (compute_node_once inputf cache pfn) nodel
     fun f node = ! (net_sub cache node) 
     val vl = map_assoc f tnodel
     val negpos = negpos_vl vl

@@ -45,6 +45,7 @@ fun dreml kl d = foldl (uncurry drem) d kl;
    String tools
    ------------------------------------------------------------------------- *)
 
+val sti = string_to_int
 val infts = IntInf.toString
 val stinf = valOf o IntInf.fromString
 val streal = valOf o Real.fromString 

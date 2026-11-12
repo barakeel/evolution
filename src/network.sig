@@ -6,7 +6,7 @@ sig
   type prog = kernel.prog
   
   type 'a net = 'a vector vector
-  type iv = int ref vector
+  type iv = int -> int
   type ex = iv * int
   type pfn = (prog ref * exec ref * int list ref * int list ref) net
   type cache = int ref net
@@ -30,7 +30,7 @@ sig
   val write_pfn : string -> pfn -> unit
   
   (* initialization *)
-  val ex_of_sentencel : int -> int list list -> ex list
+  val ex_of_sentencel : int list list -> ex list
   val init_pfn : int * int -> pfn
   val cache_empty : int
   val init_cache : pfn -> cache

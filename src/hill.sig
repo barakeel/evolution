@@ -12,6 +12,6 @@ sig
 
   (* hill *)
   val init_hill : int * int -> int list list -> pfn * ex list * negpos list
-  val loop_hill : int -> int -> pfn * ex list * negpos list -> unit
+  val loop_hill : int -> pfn * ex list * negpos list -> unit
 
 end

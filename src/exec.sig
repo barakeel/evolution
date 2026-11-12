@@ -9,12 +9,16 @@ sig
   val default : obj
   
   (* memory access *)
-  val inputv_glob: obj vector ref
+  val self_glob : int ref
+  
+  val inputf_glob: (int -> obj) ref
   val layerv_glob: (obj ref) vector ref
-  val access_layer : int -> obj
+  val access_layer : int -> obj  
+  val layerf_glob : (int -> obj) ref
+  
   val z_glob : obj ref
   val xprev_glob : obj ref
-  val self_glob : int ref
+  
   
   (* global runtime *)
   val run_time : int ref

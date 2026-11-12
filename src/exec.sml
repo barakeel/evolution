@@ -35,21 +35,19 @@ val xprev_glob = ref default
 fun xprevf fl = fn xy => (ct 1; !xprev_glob)
 
 (* read from input layer *)
-val inputv_glob = ref (Vector.fromList [0])
-fun access_input x =  
-  Vector.sub (!inputv_glob, x mod (Vector.length (!inputv_glob)))
-
+val inputf_glob = ref (fn (_:int) => 0)
 fun inputf fl = case fl of
-    [f] => (fn xy => (ct 5; access_input (!self_glob + f xy)))
+    [f] => (fn xy => (ct 5; (!inputf_glob) (!self_glob + f xy)))
   | _ => raise Msg "inputf"
 
 (* read from previous layer *)
 val layerv_glob = ref (Vector.fromList [ref 0])
+val layerf_glob = ref (fn (_:int) => 0)
 fun access_layer x = 
   ! (Vector.sub (!layerv_glob, x mod (Vector.length (!layerv_glob))))
 
 fun readif fl = case fl of
-    [f] => (fn xy => (ct 5; access_layer (!self_glob + f xy)))
+    [f] => (fn xy => (ct 5; (!layerf_glob) (!self_glob + f xy)))
   | _ => raise Msg "readif"
 
 (* arithmetical operations *)

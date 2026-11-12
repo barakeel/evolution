@@ -88,7 +88,7 @@ fun stats_hill nprog rt (exl,nex) pfn n sc =
       raise Msg ("mismatch: optimized" ^ its sc ^ ", basic " ^ its sctrue)
     val ku = Real.round (int_div (!run_time) (n * 1000))
     val t = Time.toReal (Timer.checkRealTimer rt)
-    val ti = t / Real.fromInt n
+    val ti = (t - !stats_timer) / Real.fromInt n
     fun f (x,t) = (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
       (map fst (dict_sort compare_rmax (map f timerl)))
@@ -122,8 +122,8 @@ fun report n sc scold nex npscl (di,wi) =
 fun init_hill (depth,width) sentencel =
   let 
     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl)
-    val pfn = total_time init_timer init_pfn (depth,width);
-    val exl = total_time init_timer (ex_of_sentencel width) sentencel
+    val pfn = init_pfn (depth,width)
+    val exl = ex_of_sentencel sentencel
     val npl = map (fst o score_nodep pfn) exl
   in
     (pfn,exl,npl)
@@ -132,7 +132,6 @@ fun init_hill (depth,width) sentencel =
 fun apply_undo () = (app (fn f => f ()) (!resetl_glob); resetl_glob := [])
 fun net_all f net = Vector.all (fn v => Vector.all f v) net
 fun is_clean cache = net_all (fn x => !x = cache_empty) cache
-
 
 (* --------------------------------------------------------------------------
    Main computation
@@ -187,7 +186,7 @@ fun npscl_of_winner cache pfn (di,wi) exl npscl01 winner =
    Hill climbing loop
    --------------------------------------------------------------------------*) 
 
-fun loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplold scold n =   
+fun loop_hill_aux nprog cache rt (exl,nex) pfn nplold scold n =   
   let
     val (depth,width) = dim_of_net pfn
     val (di,wi) = total_time minor_timer random_node (depth,width)
@@ -215,10 +214,10 @@ fun loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplold scold n =
     val _ = total_time stats_timer (stats_hill nprog rt (exl,nex) pfn n) sc
     val nplnew = map fst npscl
   in 
-    loop_hill_aux ncore nprog cache rt (exl,nex) pfn nplnew sc (n + 1)
+    loop_hill_aux nprog cache rt (exl,nex) pfn nplnew sc (n + 1)
   end
 
-fun loop_hill ncore nprog (pfn,exl,npl) =
+fun loop_hill nprog (pfn,exl,npl) =
   let 
     val nex = length exl
     val cache = init_cache pfn
@@ -226,7 +225,7 @@ fun loop_hill ncore nprog (pfn,exl,npl) =
     val _ = prog_skip := 0
     val _ = pe ("training on " ^ its nex ^ " examples")
   in
-    loop_hill_aux ncore nprog cache rt (exl,nex) pfn npl (~1) 1
+    loop_hill_aux nprog cache rt (exl,nex) pfn npl (~1) 1
   end
 
 
@@ -241,14 +240,12 @@ open kernel aiLib prog exec network hill;
 val sentencel = map stil (readl "aaa_test100");
 val (depth,width) = (4,1024);
 val nprog = 100;
-val ncore = 1;
-val init = init_hill (depth,width) sentencel;
+val init = init_hill (depth,width) (first_n 10 sentencel);
 PolyML.print_depth 40;
 
-time (loop_hill ncore nprog) init;
-
-(* error when restarting without reinitializing because mismatch 
-   between pfn and npl *)
+stats_freq := 100;
+time (loop_hill nprog) init;
+(* warning: cannot restart without init_hill first *)
 
 todo:
   and test the best of the other ones (this could be also done without 
