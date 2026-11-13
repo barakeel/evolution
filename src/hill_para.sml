@@ -349,11 +349,47 @@ fun dispatcher_wait_aux v ncore wid =
   dispatcher_wait_one v wid;
   dispatcher_wait_aux v ncore ((wid + 1) mod ncore) 
   )
+  
+fun dispatcher_wait_all v ncore =
+  let
+    fun poll_loop () =
+      if Vector.all (isSome o !) v then ()
+      else (
+        (* Iterate through all workers, checking whoever isn't finished yet *)
+        Vector.appi (fn (wid, r) =>
+          if isSome (!r) then ()
+          else let
+            val file = worker_file wid
+            val done_fifo = file ^ "_done"
+            (* Try to open the stream in non-blocking mode or check readiness *)
+            (* For a simple test, we check if we can read or use a quick check *)
+            val stream = TextIO.openIn done_fifo
+            val line = TextIO.inputLine stream
+            val _ = TextIO.closeIn stream
+          in
+            case line of
+              NONE => ()
+            | SOME _ => 
+                let 
+                  val x = read_worker wid 
+                  val _ = remove_file file
+                in 
+                  r := SOME x 
+                end
+          end handle _ => () (* Ignore blocked/empty pipe errors and keep polling *)
+        ) v;
+        OS.Process.sleep (Time.fromReal 0.0001); (* Tiny sleep just for the polling pass *)
+        poll_loop ()
+      )
+  in
+    poll_loop ()
+  end  
+  
 
 fun dispatcher_wait ncore =  
   let
     val v = Vector.tabulate (ncore, fn _ => ref NONE)
-    val _ = dispatcher_wait_aux v ncore 0
+    val _ = dispatcher_wait_all v ncore
     val scll = map (valOf o !) (vector_to_list v)
     val scl = map sum_int4 (list_combine scll)
   in
