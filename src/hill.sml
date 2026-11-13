@@ -89,9 +89,10 @@ fun stats_hill nprog rt (exl,nex) pfn n sc =
     val ku = Real.round (int_div (!run_time) (n * 1000))
     val t = Time.toReal (Timer.checkRealTimer rt)
     val ti = (t - !stats_timer) / Real.fromInt n
-    fun f (x,t) = (x ^ " " ^ r2 (!t), !t) 
+    fun f (x,t) = if !t < epsilon then NONE else 
+                  SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
-      (map fst (dict_sort compare_rmax (map f timerl)))
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl)))
   in
     pe (
       its n ^ ": statistics" ^ "\n  " ^ 
@@ -143,20 +144,20 @@ fun compute_scorel cache pfn (di,wi) pdel candl =
     val scorel = total_time minor_timer f ()
     fun f (np,ex) = 
       let
-        val npsc = total_time score01_timer 
+        val np = total_time score01_timer 
           (score_01 cache pfn np (di,wi)) ex
         val restore = save_node pfn (di,wi)
         val r = total_time scoreprog_timer 
-          (map (score_prog cache pfn (di,wi) ex npsc)) pdel
+          (map (score_prog cache pfn (di,wi) ex np)) pdel
         val _ = (apply_undo (); restore ())
       in
-        scorel := list_add2 r (!scorel); npsc
+        scorel := list_add2 (map (fn (x,y,z,w) => (x,y)) r) (!scorel); np
       end
     val _ = reset_flag := true
-    val npscl01 = map f candl
+    val npl01 = map f candl
     val _ = reset_flag := false
   in
-    (npscl01, !scorel)
+    (npl01, !scorel)
   end
 
 (* --------------------------------------------------------------------------
@@ -197,7 +198,7 @@ fun loop_hill_aux nprog cache rt (exl,nex) pfn nplold scold n =
     val npexl = combine (nplold,exl)
     fun f p = (p, dep_of_prog pfn (di,wi) p, mk_exec p)
     val pdel = total_time gen_timer (map f) progl
-    val (npscl01,scorel) = compute_scorel cache pfn (di,wi) pdel npexl
+    val (npl01,scorel) = compute_scorel cache pfn (di,wi) pdel npexl
     fun f () =
       let val cmp = 
         snd_compare (cpl_compare (inv_cmp Int.compare) Int.compare) 
@@ -206,7 +207,7 @@ fun loop_hill_aux nprog cache rt (exl,nex) pfn nplold scold n =
       end
     val (winner,(sc,_)) = total_time minor_timer f ()
     val npscl = total_time npl_timer 
-      (npscl_of_winner cache pfn (di,wi) exl npscl01) winner
+      (npscl_of_winner cache pfn (di,wi) exl npl01) winner
     val _ = total_time minor_timer 
       (report n sc scold nex npscl) (di,wi)
     val _ = update_prog pfn winner (di,wi)
@@ -243,7 +244,7 @@ val nprog = 100;
 val init = init_hill (depth,width) (first_n 10 sentencel);
 PolyML.print_depth 40;
 
-stats_freq := 100;
+stats_freq := 1000;
 time (loop_hill nprog) init;
 (* warning: cannot restart without init_hill first *)
 

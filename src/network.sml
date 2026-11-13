@@ -232,20 +232,19 @@ fun negpos_vl l =
     (!neg,!pos)
   end
 
-(* score out of 1 million *)
 val scaling = 1000000000
+val scalingr = Real.fromInt scaling
 
 fun score_negpos (obj,(neg,pos)) =
   let
     val total = neg + pos
     val correct = if obj > 0 then pos else neg   
+    val freq = if total = 0 then 0.5 else int_div correct total
+    val logr = if freq < epsilon then 21.0 else ~ (Math.ln freq)
   in
-    if total = 0 then scaling div 2 else (correct * scaling) div total
+    Real.round (logr * scalingr)
   end
 
-fun score_negpos2 (obj,(neg,pos)) =
-  if obj > 0 then pos - 10 * neg else neg - 10 * pos
-  
 (* --------------------------------------------------------------------------
    Compute what would be the score if the output of a program was 0 or 1
    -------------------------------------------------------------------------- *)
@@ -284,10 +283,8 @@ fun score_01 cache pfn (nb,pb) (di,wi) (inputf,obj) =
       negpos_01 cache pfn (di,wi) inputf (nodel,tnodel) (nd,pd)
     val np0 = (nh + n0, ph + p0) 
     val np1 = (nh + n1, ph + p1) 
-    val sc0 = score_negpos (obj,np0)
-    val sc1 = score_negpos (obj,np1)
   in
-    ((np0,np1),(sc0,sc1))
+    (np0,np1)
   end
 
 (* --------------------------------------------------------------------------
@@ -301,17 +298,27 @@ fun update_prog_partial pfn (di,wi) (p,dep,exec) =
 
 val prog_skip = ref 0
 
-fun score_prog cache pfn (di,wi) (inputf,obj) 
-  ((np0,np1),(sc0,sc1)) (p,dep,exec) =
-  if sc0 = sc1 then (incr prog_skip; (sc0, 0)) else
-  let
-    val _ = update_prog_partial pfn (di,wi) (p,dep,exec) 
-    val told = !run_time
-    val x = recompute_node inputf cache pfn (di,wi)
-    val tdiff = !run_time - told
-    val sc = if x = 0 then sc0 else sc1
+fun accuracy (obj,(neg,pos)) =
+  if obj <= 0 
+  then (if neg > pos then 1 else 0)
+  else (if pos > neg then 1 else 0)    
+       
+fun score_prog cache pfn (di,wi) (inputf,obj) (np0,np1) (p,dep,exec) =
+  let 
+    val (np,t) = if np0 = np1 then (np0,0) else
+      let
+        val _ = update_prog_partial pfn (di,wi) (p,dep,exec) 
+        val told = !run_time
+        val x = recompute_node inputf cache pfn (di,wi)
+        val tdiff = !run_time - told
+      in
+        (if x = 0 then np0 else np1, tdiff)
+      end
+    val sc = score_negpos (obj,np)
+    val acc = accuracy (obj,np)
+    val conf = fst np + snd np
   in
-    (sc,tdiff)
+    (sc, t, acc, conf)
   end
 
 (* --------------------------------------------------------------------------

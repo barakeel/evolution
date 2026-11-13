@@ -66,6 +66,10 @@ fun split_pair c s = pair_of_list (String.tokens (fn x => x = c) s)
 fun split_triple c s = triple_of_list (String.tokens (fn x => x = c) s)
   handle HOL_ERR _ => raise Msg ("split_triple: " ^ Char.toString c ^ " " ^ s)
   
+fun split_quadruple c s = quadruple_of_list (String.tokens (fn x => x = c) s)
+  handle HOL_ERR _ => raise Msg 
+    ("split_quadruple: " ^ Char.toString c ^ " " ^ s)  
+  
 fun rts_pad n t =
   let val n' = 
     n + 1 + (if t < 10.0 then 1 else 1 + Real.floor (Math.log10 t)) 

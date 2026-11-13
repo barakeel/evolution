@@ -17,7 +17,7 @@ val minor_timer = ref 0.0
 val init_timer = ref 0.0
 val gen_timer = ref 0.0
 val npl_timer = ref 0.0
-val stats_freq = ref 1000
+val stats_freq = ref 100
 
 val timerl = [
   ("sc01", score01_timer),
@@ -37,9 +37,18 @@ fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
    Helpers
    -------------------------------------------------------------------------- *)
 
+fun rmDir_err dir =
+  if exists_file dir then OS.FileSys.rmDir dir else ()
+
 val sti = string_to_int 
 fun nts (n,p) = (its n ^ "-" ^ its p)
 fun stn s = let val (a,b) = split_pair #"-" s in (sti a, sti b) end 
+
+fun its4 (n1,n2,n3,n4) = its n1 ^ "-" ^ its n2 ^ "-" ^ its n3 ^ "-" ^ its n4
+fun sti4 s = 
+  let val (a,b,c,d) = split_quadruple #"-" s in 
+    (sti a, sti b, sti c, sti d) 
+  end 
 
 fun random_node (depth,width) = 
   (random_int (0,depth-1), random_int (0,width -1))
@@ -47,6 +56,10 @@ fun random_node (depth,width) =
 fun list_add x y = map (fn (x,y) => x + y) (combine_err (x,y));   
 fun list_add2 x y = map (fn ((x1,x2),(y1,y2)) => 
   (x1+y1,x2+y2)) (combine_err (x,y)); 
+fun list_add3 x y = map (fn ((x1,x2,x3),(y1,y2,y3)) => 
+  (x1+y1,x2+y2,x3+y3)) (combine_err (x,y)); 
+fun list_add4 x y = map (fn ((x1,x2,x3,x4),(y1,y2,y3,y4)) => 
+  (x1+y1,x2+y2,x3+y3,x4+y4)) (combine_err (x,y)); 
 
 fun save_node pfn (di,wi) = 
   let 
@@ -67,6 +80,9 @@ fun inv_cmp cmp (a,b) = cmp (b,a)
 fun sum_int2 l = case l of [] => (0,0) | (a,b) :: m => 
   let val (c,d) = sum_int2 m in (a + c, b + d) end
 
+fun sum_int4 l = case l of [] => (0,0,0,0) | (a1,b1,c1,d1) :: m => 
+  let val (a2,b2,c2,d2) = sum_int4 m in (a1 + a2, b1 + b2, c1 + c2, d1 + d2) end
+
 val szip_prog = infts o zip_prog
 val sunzip_prog = unzip_prog o stinf
 
@@ -81,13 +97,23 @@ fun is_clean cache = net_all (fn x => !x = cache_empty) cache
 val r2 = rts_pad 2
 val r4 = rts_pad 4
 
-val prog_glob = ref (Ins (0,[]))
-
-fun accuracy npscl nex = 
-  int_div (length (filter (fn x => snd x > scaling div 2) npscl)) nex
-fun confidence npscl nex = 
-  int_div (sum_int (map (fn ((a,b),_) => a + b) npscl)) nex  
-fun hscore sc nex = (int_div sc scaling) / (Real.fromInt nex)
+fun stats rt iter =
+  if iter = 0 orelse iter mod !stats_freq <> 0 then () else
+  let
+    val ku = Real.round (int_div (!run_time) (iter * 1000))
+    val t = Time.toReal (Timer.checkRealTimer rt)
+    val ti = (t - !stats_timer) / Real.fromInt iter
+    fun f (x,t) = if !t < epsilon then NONE else 
+                  SOME (x ^ " " ^ r2 (!t), !t) 
+    val timers = String.concatWith "s, " 
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl)))
+  in
+    pe (
+       its iter ^ ": statistics" ^
+       "\n  iter: " ^ r2 (ti * 1000.0) ^ "ms/i, " ^ its ku ^ "ku/i" ^
+       "\n  total " ^ r2 t ^ "s: " ^ timers
+       )
+   end
 
 (* --------------------------------------------------------------------------
    Communication files
@@ -108,8 +134,8 @@ fun read_winner () = sunzip_prog (hd (readl winner_file))
 
 fun worker_file wid = expdir ^ "/worker" ^ its wid
 fun write_worker wid scorel = 
-  writel_atomic (worker_file wid) (map nts scorel)
-fun read_worker wid = map stn (readl (worker_file wid))
+  writel_atomic (worker_file wid) (map its4 scorel)
+fun read_worker wid = map sti4 (readl (worker_file wid))
 
 fun barrier_dir iter = expdir ^ "/iter" ^ its iter
 
@@ -125,7 +151,7 @@ fun barrier file =
 fun read_exl (ncore,wid) = 
   let 
     val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
-    val exltot = total_time init_timer ex_of_sentencel sentencel
+    val exltot = ex_of_sentencel sentencel
   in
     List.nth (cut_n ncore exltot, wid)
   end
@@ -162,20 +188,20 @@ fun update_npexl pfn exl npl01o = case npl01o of
 (* computes scores and memorizes npl01 for next round *)
 fun score_npex scorel cache pfn (node,pdel) (np,ex) = 
   let
-    val npsc = total_time score01_timer (score_01 cache pfn np node) ex
+    val np01 = total_time score01_timer (score_01 cache pfn np node) ex
     val restore = save_node pfn node
-    val r = total_time scoreprog_timer 
-      (map (score_prog cache pfn node ex npsc)) pdel
+    val scl = total_time scoreprog_timer 
+      (map (score_prog cache pfn node ex np01)) pdel
     val _ = (apply_undo (); restore ())
   in
-    scorel := list_add2 r (!scorel); (fst npsc)
+    scorel := list_add4 scl (!scorel); np01
   end
 
 fun score_npexl pfn (node,pdel) npexl =
   let
     val _ = reset_flag := true
     val cache = init_cache pfn
-    val scorel = ref (List.tabulate (length pdel, fn _ => (0,0)))
+    val scorel = ref (List.tabulate (length pdel, fn _ => (0,0,0,0)))
     val npl01 = map (score_npex scorel cache pfn (node,pdel)) npexl
     val _ = reset_flag := false 
   in
@@ -195,17 +221,17 @@ fun worker s =
     val exl = read_exl (ncore,wid)
     val pfn = read_pfn (expdir ^ "/pfn_init")
     val itertot = sti (hd (readl (expdir ^ "/itertot")))
+    val rt = Timer.startRealTimer ()
     fun loop npl01o iter =
       if iter >= itertot then "done" else
       let
         val _ = barrier (barrier_dir iter)
-        val _ = pe ("worker " ^ its wid ^ " start: " ^ its iter)
-        val _ = update_prog_wrapper npl01o pfn
-        val npexl = update_npexl pfn exl npl01o
+        val _ = total_time gen_timer (update_prog_wrapper npl01o) pfn
+        val npexl = total_time npl_timer (update_npexl pfn exl) npl01o
         val (node,pdel) = read_pdel pfn
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
         val _ = write_worker wid scorel
-        val _ = pe ("worker " ^ its wid ^ " end: " ^ its iter)
+        val _ = total_time stats_timer (stats rt) iter
       in
         loop (SOME (npl01,node)) (iter + 1)
       end
@@ -250,13 +276,15 @@ fun dispatcher_wait ncore =
     val v = Vector.tabulate (ncore, fn _ => ref NONE)
     val _ = dispatcher_wait_aux v ncore 0
     val scll = map (valOf o !) (vector_to_list v)
-    val _ = pe "please"
-    val scl = map sum_int2 (list_combine scll)
+    val scl = map sum_int4 (list_combine scll)
   in
     scl
   end
   
-val cmp_score = snd_compare (cpl_compare (inv_cmp Int.compare) Int.compare)
+fun cpl_compare24 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
+  cpl_compare cmp1 cmp2 ((a1,b1),(a2,b2))
+  
+val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
 
 fun dispatcher s = 
   let 
@@ -265,29 +293,32 @@ fun dispatcher s =
     val nprog = sti s3
     val pfn = read_pfn (expdir ^ "/pfn_init")
     val itertot = sti (hd (readl (expdir ^ "/itertot")))
-    fun loop iter winnerl =
+    val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
+    val exltot = ex_of_sentencel sentencel
+    val exln = length exltot
+    fun loop oldsc iter winnerl =
       if iter >= itertot then 
         (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
       else 
       let
-        val _ = pe ("dispatcher send: " ^ its iter)
         val (node,pl) = dispatcher_send iter winnerl nprog pfn
-        val _ = pe ("dispatcher wait: " ^ its iter)
         val scl = dispatcher_wait ncore
-        val _ = pe ("dispatcher start: " ^ its iter)
-        val _ = pe ("scl: " ^ its (length scl))
-        fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
-        val (winner,(sc,_)) = total_time minor_timer f ()
+        val _ = rmDir_err (barrier_dir iter)
+        val (winner,(sc,speed,acc,conf)) = 
+          hd (dict_sort cmp_score (combine_err (pl,scl)))
         val _ = update_prog pfn winner node
-        (* todo: compute accuracy score and confidence *)
-        val _ = pe ("sc " ^ its sc ^ ", size " ^ its (prog_size winner))
+        val _ = if sc = oldsc then () else
+           pe (its iter ^ ": " ^
+                    "sc " ^ r4 (int_div sc (exln * scaling)) ^ 
+                    ", acc " ^ r4 (int_div acc exln) ^
+                    ", conf " ^ r4 (int_div conf exln) ^ 
+                    ", speed " ^ r4 (int_div speed exln))
         val _ = write_winner winner
-        val _ = pe ("dispatcher end: " ^ its iter)
       in
-        loop (iter + 1) [winner]
+        loop sc (iter + 1) [winner]
       end
   in
-    loop 0 []
+    loop 0 0 []
   end
 
 (* --------------------------------------------------------------------------
@@ -318,12 +349,12 @@ PolyML.print_depth 0;
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (4,1024);
+val (depth,width) = (4,10000);
 val nprog = 100;
-val ncore = 2;
-val niter = 1000;
+val ncore = 5;
+val niter = 1000000;
 
-time (hill_para ncore nprog (depth,width)) niter;
+val pfn = hill_para ncore nprog (depth,width) niter;
 
 
 *)

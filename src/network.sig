@@ -50,10 +50,10 @@ sig
   
   (* score *)
   val score_negpos : int * (int * int) -> int
-  val score_01 : cache -> pfn -> negpos -> node -> ex -> 
-    (negpos * negpos) * (int * int)
+  val score_01 : cache -> pfn -> negpos -> node -> ex -> (negpos * negpos)
   val score_prog : cache -> pfn -> node -> ex -> 
-    (negpos * negpos) * (int * int) -> (prog * int list * exec) -> (int * int)
+    (negpos * negpos) -> (prog * int list * exec) -> 
+    (int * int * int * int)
   val score_nodep : pfn -> ex -> (negpos * int)
   
 end

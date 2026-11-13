@@ -33,6 +33,7 @@ sig
   val ilts : int list -> string
   val split_pair : char -> string -> string * string
   val split_triple : char -> string -> string * string * string
+  val split_quadruple : char -> string -> string * string * string * string
   val rts_pad : int -> real -> string
   val lts : string list -> string
   val stl : string -> string list
