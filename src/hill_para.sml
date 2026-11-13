@@ -20,7 +20,12 @@ val npl_timer = ref 0.0
 val send_timer = ref 0.0
 val wait_timer = ref 0.0
 val sort_timer = ref 0.0
-
+val init_cache_timer = ref 0.0
+val barrier_timer = ref 0.0
+val read_pdel_timer = ref 0.0
+val write_worker_timer = ref 0.0
+val score_total_timer = ref 0.0
+val read_worker_timer = ref 0.0
 
 val stats_freq = ref 100
 
@@ -35,7 +40,13 @@ val timerl = [
   ("npl", npl_timer),
   ("send", send_timer),
   ("wait", wait_timer),
-  ("sort", sort_timer)
+  ("sort", sort_timer),
+  ("init_cache", init_cache_timer),
+  ("barrier", barrier_timer),
+  ("read_pdel", read_pdel_timer),
+  ("write_worker", write_worker_timer),
+  ("score_total", score_total_timer),
+  ("read_worker", read_worker_timer)
   ]  
   
 fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
@@ -131,7 +142,7 @@ fun stats_dispatcher iter =
     val timers = String.concatWith "s, " 
       (map fst (dict_sort compare_rmax (List.mapPartial f timerl))) ^ "s"
   in
-    pe (its iter ^ "statistics: " ^ timers)
+    pe (its iter ^ " statistics: " ^ timers)
    end
 
 (* --------------------------------------------------------------------------
@@ -220,7 +231,7 @@ fun score_npex scorel cache pfn (node,pdel) (np,ex) =
 fun score_npexl pfn (node,pdel) npexl =
   let
     val _ = reset_flag := true
-    val cache = init_cache pfn
+    val cache = total_time init_cache_timer init_cache pfn
     val scorel = ref (List.tabulate (length pdel, fn _ => (0,0,0,0)))
     val npl01 = map (score_npex scorel cache pfn (node,pdel)) npexl
     val _ = reset_flag := false 
@@ -245,12 +256,17 @@ fun worker s =
     fun loop npl01o iter =
       if iter >= itertot then "done" else
       let
-        val _ = barrier (barrier_dir iter)
-        val _ = total_time gen_timer (update_prog_wrapper npl01o) pfn
-        val npexl = total_time npl_timer (update_npexl pfn exl) npl01o
-        val (node,pdel) = read_pdel pfn
+        val _ = total_time barrier_timer 
+          barrier (barrier_dir iter)
+        val _ = total_time gen_timer 
+          (update_prog_wrapper npl01o) pfn
+        val npexl = total_time npl_timer 
+          (update_npexl pfn exl) npl01o
+        val (node,pdel) = total_time read_pdel_timer
+          read_pdel pfn
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
-        val _ = write_worker wid scorel
+        val _ = total_time write_worker_timer 
+          (write_worker wid) scorel
         val _ = total_time stats_timer (stats_worker rt) iter
       in
         loop (SOME (npl01,node)) (iter + 1)
@@ -280,9 +296,11 @@ fun dispatcher_wait_one v wid =
     val _ = OS.Process.sleep (Time.fromReal 0.0001)
     val r = Vector.sub (v,wid) 
     val file = worker_file wid
+    fun f () = let val x = read_worker wid in remove_file file; r := SOME x end
   in
-    if isSome (!r) orelse not (exists_file file) then () else
-    let val x = read_worker wid in remove_file file; r := SOME x end
+    if isSome (!r) orelse not (exists_file file) 
+    then () 
+    else total_time read_worker_timer f ()
   end
 
 fun dispatcher_wait_aux v ncore wid =
