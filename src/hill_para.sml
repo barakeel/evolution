@@ -26,6 +26,7 @@ val read_pdel_timer = ref 0.0
 val write_worker_timer = ref 0.0
 val score_total_timer = ref 0.0
 val read_worker_timer = ref 0.0
+val read_worker_timer2 = ref 0.0
 
 val stats_freq = ref 100
 
@@ -46,7 +47,8 @@ val timerl = [
   ("read_pdel", read_pdel_timer),
   ("write_worker", write_worker_timer),
   ("score_total", score_total_timer),
-  ("read_worker", read_worker_timer)
+  ("read_worker", read_worker_timer),
+  ("read_worker2", read_worker_timer2)
   ]  
   
 fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
@@ -331,7 +333,7 @@ fun dispatcher_wait_one v wid =
         val stream = TextIO.openIn done_fifo
         val _ = TextIO.inputLine stream
         val _ = TextIO.closeIn stream
-        val x = read_worker wid 
+        val x = total_time read_worker_timer2 read_worker wid 
         val _ = remove_file file
       in
         r := SOME x 
@@ -427,3 +429,19 @@ fun hill_para ncore nprog (depth,width) itertot =
   end 
 
 end (* struct *)
+
+(*
+load "hill_para";
+
+PolyML.print_depth 0; 
+open kernel aiLib prog exec network hill_para;
+PolyML.print_depth 40;
+
+val (depth,width) = (4,10000);
+val nprog = 100;
+val ncore = 50;
+val niter = 1000000;
+
+val pfn = hill_para ncore nprog (depth,width) niter;
+*)
+
