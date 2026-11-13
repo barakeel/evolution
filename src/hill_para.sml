@@ -171,8 +171,14 @@ fun write_node node = writel node_file [nts node]
 fun read_node () = stn (hd (readl node_file))
 
 val winner_file = expdir ^ "/winner"
-fun write_winner p = writel winner_file [szip_prog p]
-fun read_winner () = sunzip_prog (hd (readl winner_file))
+fun write_winner po = case po of 
+     NONE => writel winner_file ["nowinner"] 
+   | SOME p => writel winner_file [szip_prog p]
+
+fun read_winnero () = 
+  let val s = hd (readl winner_file) in
+    if s = "nowinner" then NONE else SOME (sunzip_prog s)
+  end
 
 fun worker_file wid = expdir ^ "/worker" ^ its wid
 fun write_worker wid scorel = 
@@ -216,8 +222,13 @@ fun npexl_of pfn exl npl01 node =
     npexl
   end
 
-fun update_npexl pfn exl npl01o = case npl01o of 
-    SOME (npl01,node) => npexl_of pfn exl npl01 node
+fun update_npexl pfn exl npl01o po = case npl01o of 
+    SOME (npl01,npexl,node) => 
+      (
+      case po of 
+        NONE => npexl 
+      | SOME _ => npexl_of pfn exl npl01 node
+      )
   | NONE => map (fn x => (fst (score_nodep pfn x), x)) exl
 
 (* computes scores and memorizes npl01 for next round *)
@@ -243,11 +254,14 @@ fun score_npexl pfn (node,pdel) npexl =
     (!scorel,npl01)
   end
 
-fun update_prog_wrapper npl01o pfn =
+fun read_winner_wrapper () =
   let val file = expdir ^ "/winner" in
-    if not (exists_file file) then () else
-    let val p = read_winner () in update_prog pfn p (snd (valOf npl01o)) end
+    if not (exists_file file) then NONE else read_winnero ()
   end
+
+fun update_prog_wrapper pfn npl01o po = case po of 
+   NONE => () 
+ | SOME p => update_prog pfn p (#3 (valOf npl01o))
 
 fun worker s =
   let 
@@ -257,30 +271,24 @@ fun worker s =
     val pfn = read_pfn (expdir ^ "/pfn_init")
     val itertot = sti (hd (readl (expdir ^ "/itertot")))
     val rt = Timer.startRealTimer ()
-    
     val b_fifo = expdir ^ "/barrier_" ^ its wid
     val done_fifo = worker_file wid ^ "_done"
-
     fun loop npl01o iter =
       if iter >= itertot then "done" else
       let
-        (* Blocking wait for dispatcher signal (0% CPU) *)
         val _ = total_time barrier_timer (fn () =>
           let
             val stream = TextIO.openIn b_fifo
             val _ = TextIO.inputLine stream
             val _ = TextIO.closeIn stream
           in () end) ()
-
-        val _ = total_time gen_timer 
-          (update_prog_wrapper npl01o) pfn
+        val po = read_winner_wrapper ()
+        val _ = update_prog_wrapper pfn npl01o po
         val npexl = total_time npl_timer 
-          (update_npexl pfn exl) npl01o
+          (update_npexl pfn exl npl01o) po
         val (node,pdel) = total_time read_pdel_timer
           read_pdel pfn
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
-        
-        (* Write scores and signal dispatcher via completion FIFO *)
         val _ = total_time write_worker_timer (fn () =>
           let
             val file = worker_file wid
@@ -289,10 +297,9 @@ fun worker s =
             val _ = TextIO.output (out, "done\n")
             val _ = TextIO.closeOut out
           in () end) ()
-
         val _ = total_time stats_timer (stats_worker rt) iter
       in
-        loop (SOME (npl01,node)) (iter + 1)
+        loop (SOME (npl01,npexl,node)) (iter + 1)
       end
   in
     loop NONE 0 
@@ -302,16 +309,17 @@ fun worker s =
    Dispatcher
    -------------------------------------------------------------------------- *)
 
-fun random_pl winnerl nprog = mk_fast_set prog_compare_size
-  (winnerl @ (List.tabulate (nprog, !random_prog_glob)))
+(* don't recompute if there is no winner *)
+fun random_pl nprog = 
+  mk_fast_set prog_compare_size 
+    (List.tabulate (nprog, !random_prog_glob))
 
-fun dispatcher_send iter winnerl nprog pfn ncore =  
+fun dispatcher_send iter nprog pfn ncore =  
   let 
     val node = random_node (dim_of_net pfn) 
-    val pl = random_pl winnerl nprog
+    val pl = random_pl nprog
   in
     write_node node; write_pl pl;
-    (* Signal all workers via their barrier FIFOs *)
     app (fn wid =>
       let
         val out = TextIO.openOut (expdir ^ "/barrier_" ^ its wid)
@@ -321,35 +329,6 @@ fun dispatcher_send iter winnerl nprog pfn ncore =
     (node,pl)
   end
 
-fun dispatcher_wait_one v wid =
-  let 
-    val r = Vector.sub (v,wid) 
-    val file = worker_file wid
-    val done_fifo = file ^ "_done"
-    
-    fun f () = 
-      let 
-        (* Blocking read waits until worker signals completion (0% CPU) *)
-        val stream = TextIO.openIn done_fifo
-        val _ = TextIO.inputLine stream
-        val _ = TextIO.closeIn stream
-        val x = total_time read_worker_timer2 read_worker wid 
-        val _ = remove_file file
-      in
-        r := SOME x 
-      end
-  in
-    if isSome (!r) then () 
-    else total_time read_worker_timer f ()
-  end
-
-fun dispatcher_wait_aux v ncore wid =
-  if Vector.all (isSome o !) v then () else 
-  (
-  dispatcher_wait_one v wid;
-  dispatcher_wait_aux v ncore ((wid + 1) mod ncore) 
-  )
-  
 fun dispatcher_wait_all v ncore =
   let
     fun poll_loop () =
@@ -361,8 +340,8 @@ fun dispatcher_wait_all v ncore =
           else let
             val file = worker_file wid
             val done_fifo = file ^ "_done"
-            (* Try to open the stream in non-blocking mode or check readiness *)
-            (* For a simple test, we check if we can read or use a quick check *)
+        (* Try to open the stream in non-blocking mode or check readiness *)
+        (* For a simple test, we check if we can read or use a quick check *)
             val stream = TextIO.openIn done_fifo
             val line = TextIO.inputLine stream
             val _ = TextIO.closeIn stream
@@ -376,9 +355,11 @@ fun dispatcher_wait_all v ncore =
                 in 
                   r := SOME x 
                 end
-          end handle _ => () (* Ignore blocked/empty pipe errors and keep polling *)
+          end handle _ => () 
+          (* Ignore blocked/empty pipe errors and keep polling *)
         ) v;
-        OS.Process.sleep (Time.fromReal 0.0001); (* Tiny sleep just for the polling pass *)
+        OS.Process.sleep (Time.fromReal 0.0001); 
+        (* Tiny sleep just for the polling pass *)
         poll_loop ()
       )
   in
@@ -411,31 +392,33 @@ fun dispatcher s =
     val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
     val exltot = ex_of_sentencel sentencel
     val exln = length exltot
-    fun loop oldsc iter winnerl =
+    fun loop oldsc iter =
       if iter >= itertot then 
         (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
       else 
       let
         val (node,pl) = total_time send_timer
-          (dispatcher_send iter winnerl nprog pfn) ncore
+          (dispatcher_send iter nprog pfn) ncore
         val scl = total_time wait_timer dispatcher_wait ncore
         
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
         val _ = update_prog pfn winner node
-        val _ = if sc = oldsc then () else
+        val winnero = if sc < oldsc then SOME winner else NONE
+        val newsc = if sc < oldsc then sc else oldsc
+        val _ = if sc >= oldsc then () else
             pe (its iter ^ ": " ^
                      "sc " ^ r4 (int_div sc (exln * scaling)) ^ 
                      ", acc " ^ r4 (int_div acc exln) ^
                      ", conf " ^ r4 (int_div conf exln) ^ 
                      ", speed " ^ r4 (int_div speed exln))
-        val _ = write_winner winner
+        val _ = write_winner winnero
         val _ = stats_dispatcher iter
       in
-        loop sc (iter + 1) [winner]
+        loop sc (iter + 1)
       end
   in
-    loop 0 0 []
+    loop 0 0
   end
 
 (* --------------------------------------------------------------------------
@@ -473,11 +456,15 @@ PolyML.print_depth 0;
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (4,10000);
-val nprog = 100;
+val (depth,width) = (8,1000);
+val nprog = 1000;
 val ncore = 50;
 val niter = 1000000;
 
 val pfn = hill_para ncore nprog (depth,width) niter;
+
+17500 statistics: wait 5239.88s, send 570.00s, sort 9.99s
+17502: sc 0.4686, acc 0.8056, conf 78.7434, speed 29.7380
+
 *)
 
