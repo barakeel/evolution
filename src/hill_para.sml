@@ -17,6 +17,11 @@ val minor_timer = ref 0.0
 val init_timer = ref 0.0
 val gen_timer = ref 0.0
 val npl_timer = ref 0.0
+val send_timer = ref 0.0
+val wait_timer = ref 0.0
+val sort_timer = ref 0.0
+
+
 val stats_freq = ref 100
 
 val timerl = [
@@ -27,7 +32,10 @@ val timerl = [
   ("gen", gen_timer),
   ("stats", stats_timer),
   ("minor", minor_timer),
-  ("npl", npl_timer)
+  ("npl", npl_timer),
+  ("send", send_timer),
+  ("wait", wait_timer),
+  ("sort", sort_timer)
   ]  
   
 fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
@@ -97,7 +105,7 @@ fun is_clean cache = net_all (fn x => !x = cache_empty) cache
 val r2 = rts_pad 2
 val r4 = rts_pad 4
 
-fun stats rt iter =
+fun stats_worker rt iter =
   if iter = 0 orelse iter mod !stats_freq <> 0 then () else
   let
     val ku = Real.round (int_div (!run_time) (iter * 1000))
@@ -106,13 +114,24 @@ fun stats rt iter =
     fun f (x,t) = if !t < epsilon then NONE else 
                   SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
-      (map fst (dict_sort compare_rmax (List.mapPartial f timerl)))
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl))) ^ "s"
   in
     pe (
        its iter ^ ": statistics" ^
        "\n  iter: " ^ r2 (ti * 1000.0) ^ "ms/i, " ^ its ku ^ "ku/i" ^
        "\n  total " ^ r2 t ^ "s: " ^ timers
        )
+   end
+
+fun stats_dispatcher iter =
+  if iter = 0 orelse iter mod !stats_freq <> 0 then () else
+  let
+    fun f (x,t) = if !t < epsilon then NONE else 
+                  SOME (x ^ " " ^ r2 (!t), !t) 
+    val timers = String.concatWith "s, " 
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl))) ^ "s"
+  in
+    pe (its iter ^ "statistics: " ^ timers)
    end
 
 (* --------------------------------------------------------------------------
@@ -232,7 +251,7 @@ fun worker s =
         val (node,pdel) = read_pdel pfn
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
         val _ = write_worker wid scorel
-        val _ = total_time stats_timer (stats rt) iter
+        val _ = total_time stats_timer (stats_worker rt) iter
       in
         loop (SOME (npl01,node)) (iter + 1)
       end
@@ -303,11 +322,12 @@ fun dispatcher s =
         (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
       else 
       let
-        val (node,pl) = dispatcher_send iter winnerl nprog pfn
-        val scl = dispatcher_wait ncore
+        val (node,pl) = total_time send_timer
+          (dispatcher_send iter winnerl nprog) pfn
+        val scl = total_time wait_timer dispatcher_wait ncore
         val _ = rmDir_err (barrier_dir iter)
-        val (winner,(sc,speed,acc,conf)) = 
-          hd (dict_sort cmp_score (combine_err (pl,scl)))
+        fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
+        val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
         val _ = update_prog pfn winner node
         val _ = if sc = oldsc then () else
            pe (its iter ^ ": " ^
@@ -316,6 +336,7 @@ fun dispatcher s =
                     ", conf " ^ r4 (int_div conf exln) ^ 
                     ", speed " ^ r4 (int_div speed exln))
         val _ = write_winner winner
+        val _ = stats_dispatcher iter
       in
         loop sc (iter + 1) [winner]
       end
