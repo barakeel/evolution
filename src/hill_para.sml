@@ -144,7 +144,8 @@ fun barrier_dir iter = expdir ^ "/iter" ^ its iter
    -------------------------------------------------------------------------- *)
 
 fun barrier file =
-  let fun busy () = if exists_file file then () else busy () in
+  let fun busy () = if exists_file file then () else 
+    (OS.Process.sleep (Time.fromReal 0.0001); busy ()) in
     busy ()
   end
 
@@ -257,6 +258,7 @@ fun dispatcher_send iter winnerl nprog pfn =
 
 fun dispatcher_wait_one v wid =
   let 
+    val _ = OS.Process.sleep (Time.fromReal 0.0001)
     val r = Vector.sub (v,wid) 
     val file = worker_file wid
   in
@@ -351,7 +353,7 @@ PolyML.print_depth 40;
 
 val (depth,width) = (4,10000);
 val nprog = 100;
-val ncore = 5;
+val ncore = 50;
 val niter = 1000000;
 
 val pfn = hill_para ncore nprog (depth,width) niter;
