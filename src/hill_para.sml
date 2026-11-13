@@ -3,7 +3,7 @@ struct
 
 open HolKernel aiLib kernel exec prog network
 
-val expdir = selfdir ^ "/para"
+val expdir = "/tmp/thibault"
 
 (* --------------------------------------------------------------------------
    Profiling
