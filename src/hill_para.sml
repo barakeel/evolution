@@ -401,6 +401,8 @@ fun dispatcher s =
     val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
     val exltot = ex_of_sentencel sentencel
     val exln = length exltot
+    val _ = pe (its exln ^ " examples from " ^ 
+                its (length sentencel) ^ "sentences")
     fun loop oldsc iter =
       if iter >= itertot then 
         (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
