@@ -308,15 +308,15 @@ fun worker s =
    Dispatcher
    -------------------------------------------------------------------------- *)
 
-(* don't recompute if there is no winner *)
-fun random_pl nprog = 
+fun random_pl p nprog = 
   mk_fast_set prog_compare_size 
-    (List.tabulate (nprog, !random_prog_glob))
+    (p :: (List.tabulate (nprog, !random_prog_glob)))
 
 fun dispatcher_send iter nprog pfn ncore =  
   let 
     val node = random_node (dim_of_net pfn) 
-    val pl = random_pl nprog
+    val p = ! (#1 (net_sub pfn node))
+    val pl = random_pl p nprog
   in
     write_node node; write_pl pl;
     app (fn wid =>
@@ -409,22 +409,22 @@ fun dispatcher s =
         val (node,pl) = total_time send_timer
           (dispatcher_send iter nprog pfn) ncore
         val scl = total_time wait_timer dispatcher_wait ncore
-        
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
-        val _ = update_prog pfn winner node
-        val winnero = if sc < oldsc then SOME winner else NONE
-        val newsc = if sc < oldsc then sc else oldsc
-        val _ = if sc >= oldsc then () else
+        val _ = if sc < oldsc then
             pe (its iter ^ ": " ^
-                     "sc " ^ r4 (int_div sc (exln * scaling)) ^ 
-                     ", acc " ^ r4 (int_div acc exln) ^
-                     ", conf " ^ r4 (int_div conf exln) ^ 
-                     ", speed " ^ r4 (int_div speed exln))
+                "sc " ^ r4 (int_div sc (exln * scaling)) ^ 
+                ", acc " ^ r4 (int_div acc exln) ^
+                ", conf " ^ r4 (int_div conf exln) ^ 
+                ", speed " ^ r4 (int_div speed exln))
+            else ()
+        val oldwinner = ! (#1 (net_sub pfn node))
+        val winnero = if winner = oldwinner then NONE else SOME winner
         val _ = write_winner winnero
         val _ = stats_dispatcher iter
+        val _ = update_prog pfn winner node
       in
-        loop newsc (iter + 1)
+        loop sc (iter + 1)
       end
   in
     loop 0 0
