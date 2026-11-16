@@ -217,10 +217,14 @@ fun read_oeis () =
 end (* struct *)
 
 (*
-load "prog"; open prog;
-val p = random_prog 0;
-string_of_prog p;
-collect_readargl p;
+load "prog"; open prog; open kernel aiLib;
+val sl2 = read_oeis ();
+val sl3 = dict_sort compare_imin (map_assoc length sl2);
+val sl4 = first_n 2000 sl3;
+print_endline (its (sum_int (map snd sl4)) ^ " examples");
+writel "aaa_test1000" (map (ilts o fst) (shuffle sl4));
+
+
 *)
 
 

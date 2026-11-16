@@ -4,6 +4,7 @@ struct
 open HolKernel aiLib kernel exec prog network
 
 val expdir = "/dev/shm/thibault"
+val train_file = selfdir ^ "/aaa_test2000"
 
 (* --------------------------------------------------------------------------
    Profiling
@@ -190,7 +191,7 @@ fun read_worker wid = map sti4 (readl (worker_file wid))
 
 fun read_exl (ncore,wid) = 
   let 
-    val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
+    val sentencel = map stil (readl train_file) 
     val exltot = ex_of_sentencel sentencel
   in
     List.nth (cut_n ncore exltot, wid)
@@ -398,7 +399,7 @@ fun dispatcher s =
     val nprog = sti s3
     val pfn = read_pfn (expdir ^ "/pfn_init")
     val itertot = sti (hd (readl (expdir ^ "/itertot")))
-    val sentencel = map stil (readl (selfdir ^ "/aaa_test100")) 
+    val sentencel = map stil (readl train_file) 
     val exltot = ex_of_sentencel sentencel
     val exln = length exltot
     val _ = pe (its exln ^ " examples from " ^ 
