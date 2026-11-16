@@ -424,7 +424,7 @@ fun dispatcher s =
         val winnero = if winner = oldwinner then NONE else SOME winner
         val _ = write_winner winnero
         val _ = stats_dispatcher iter
-        val _ = update_prog pfn winner node
+        val _ = if winner = oldwinner then () else update_prog pfn winner node
       in
         loop sc (iter + 1)
       end
