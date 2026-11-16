@@ -14,41 +14,38 @@ val score01_timer = ref 0.0
 val scoreprog_timer = ref 0.0
 val stats_timer = ref 0.0
 val minor_timer = ref 0.0
-val init_timer = ref 0.0
 val gen_timer = ref 0.0
 val npl_timer = ref 0.0
 val send_timer = ref 0.0
 val wait_timer = ref 0.0
 val sort_timer = ref 0.0
-val init_cache_timer = ref 0.0
 val barrier_timer = ref 0.0
 val read_pdel_timer = ref 0.0
 val write_worker_timer = ref 0.0
 val score_total_timer = ref 0.0
-val read_worker_timer = ref 0.0
-val read_worker_timer2 = ref 0.0
+val dispatch_timer = ref 0.0
 
 val stats_freq = ref 100
 
-val timerl = [
+val timerl_worker = [
   ("sc01", score01_timer),
   ("dep", dep_timer),
   ("scp", scoreprog_timer),
-  ("init", init_timer),
   ("gen", gen_timer),
   ("stats", stats_timer),
   ("minor", minor_timer),
   ("npl", npl_timer),
-  ("send", send_timer),
-  ("wait", wait_timer),
-  ("sort", sort_timer),
-  ("init_cache", init_cache_timer),
   ("barrier", barrier_timer),
   ("read_pdel", read_pdel_timer),
   ("write_worker", write_worker_timer),
-  ("score_total", score_total_timer),
-  ("read_worker", read_worker_timer),
-  ("read_worker2", read_worker_timer2)
+  ("score_total", score_total_timer)
+  ]
+  
+val timerl_dispatcher = [
+  ("send", send_timer),
+  ("wait", wait_timer),
+  ("sort", sort_timer),
+  ("dispatch_timer",dispatch_timer)
   ]  
   
 fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
@@ -138,7 +135,8 @@ fun stats_worker rt iter =
     fun f (x,t) = if !t < epsilon then NONE else 
                     SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
-      (map fst (dict_sort compare_rmax (List.mapPartial f timerl))) ^ "s"
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl_worker))) 
+      ^ "s"
   in
     pe (
         its iter ^ ": statistics" ^
@@ -153,7 +151,8 @@ fun stats_dispatcher iter =
     fun f (x,t) = if !t < epsilon then NONE else 
                     SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
-      (map fst (dict_sort compare_rmax (List.mapPartial f timerl))) ^ "s"
+      (map fst (dict_sort compare_rmax (List.mapPartial f timerl_dispatcher))) 
+      ^ "s"
   in
     pe (its iter ^ " statistics: " ^ timers)
    end
@@ -246,7 +245,7 @@ fun score_npex scorel cache pfn (node,pdel) (np,ex) =
 fun score_npexl pfn (node,pdel) npexl =
   let
     val _ = reset_flag := true
-    val cache = total_time init_cache_timer init_cache pfn
+    val cache = init_cache pfn
     val scorel = ref (List.tabulate (length pdel, fn _ => (0,0,0,0)))
     val npl01 = map (score_npex scorel cache pfn (node,pdel)) npexl
     val _ = reset_flag := false 
@@ -265,7 +264,7 @@ fun update_prog_wrapper pfn npl01o po = case po of
 
 fun worker s =
   let 
-    val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl)
+    val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_worker)
     val (ncore,wid) = stn s
     val exl = read_exl (ncore,wid)
     val pfn = read_pfn (expdir ^ "/pfn_init")
@@ -329,19 +328,27 @@ fun dispatcher_send iter nprog pfn ncore =
     (node,pl)
   end
 
+val rt_dispatch = Timer.startRealTimer ()
+val rt_dispatch_mem = ref 0.0
+
+fun start_rt_dispatch () = 
+  rt_dispatch_mem := Time.toReal (Timer.checkRealTimer rt_dispatch)
+    
+fun end_rt_dispatch () = 
+  dispatch_timer := !dispatch_timer + 
+    (Time.toReal (Timer.checkRealTimer rt_dispatch) - !rt_dispatch_mem)
+
 fun dispatcher_wait_all v ncore =
   let
-    fun poll_loop () =
+    val bstart = ref false
+    fun loop () =
       if Vector.all (isSome o !) v then ()
       else (
-        (* Iterate through all workers, checking whoever isn't finished yet *)
         Vector.appi (fn (wid, r) =>
           if isSome (!r) then ()
           else let
             val file = worker_file wid
             val done_fifo = file ^ "_done"
-        (* Try to open the stream in non-blocking mode or check readiness *)
-        (* For a simple test, we check if we can read or use a quick check *)
             val stream = TextIO.openIn done_fifo
             val line = TextIO.inputLine stream
             val _ = TextIO.closeIn stream
@@ -350,20 +357,21 @@ fun dispatcher_wait_all v ncore =
               NONE => ()
             | SOME _ => 
                 let 
+                  val _ = if !bstart then () else
+                    (start_rt_dispatch (); bstart := true)
                   val x = read_worker wid 
                   val _ = remove_file file
                 in 
                   r := SOME x 
                 end
-          end handle _ => () 
-          (* Ignore blocked/empty pipe errors and keep polling *)
+          end handle Interrupt => raise Interrupt | _ => ()
         ) v;
         OS.Process.sleep (Time.fromReal 0.0001); 
-        (* Tiny sleep just for the polling pass *)
-        poll_loop ()
+        loop ()
       )
   in
-    poll_loop ()
+    loop ();
+    end_rt_dispatch ()
   end  
   
 
@@ -384,6 +392,7 @@ val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
 
 fun dispatcher s =  
   let 
+     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
     val (s1,s2,s3) = split_triple #" " s
     val ncore = sti s2
     val nprog = sti s3
@@ -415,7 +424,7 @@ fun dispatcher s =
         val _ = write_winner winnero
         val _ = stats_dispatcher iter
       in
-        loop sc (iter + 1)
+        loop newsc (iter + 1)
       end
   in
     loop 0 0
@@ -433,8 +442,6 @@ fun hill_para ncore nprog (depth,width) itertot =
     val _ = clean_dir expdir
     val _ = write_pfn (expdir ^ "/pfn_init") (init_pfn (depth,width))
     val _ = writel (expdir ^ "/itertot") [its itertot]
-    
-    (* Create persistent FIFOs once during startup *)
     val _ = List.app (fn i => create_fifo (expdir ^ "/barrier_" ^ its i)) 
                      (List.tabulate (ncore, fn i => i))
     val _ = List.app (fn i => create_fifo (worker_file i ^ "_done")) 
