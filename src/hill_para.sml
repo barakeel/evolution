@@ -391,7 +391,7 @@ fun cpl_compare24 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
   
 val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
 
-fun report iter oldsc (sc,speed,acc,conf) =
+fun report exln iter oldsc (sc,speed,acc,conf) =
   if sc >= oldsc then () else
   let 
     val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
@@ -426,7 +426,7 @@ fun dispatcher s =
         val scl = total_time wait_timer dispatcher_wait ncore
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
-        val _ = 
+        val _ = report exln iter oldsc (sc,speed,acc,conf)
         val oldwinner = ! (#1 (net_sub pfn node))
         val winnero = if winner = oldwinner then NONE else SOME winner
         val _ = write_winner winnero
