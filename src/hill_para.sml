@@ -4,7 +4,7 @@ struct
 open HolKernel aiLib kernel exec prog network
 
 val expdir = "/dev/shm/thibault"
-val train_file = selfdir ^ "/aaa_test2000"
+val train_file = selfdir ^ "/aaa_test1000"
 
 (* --------------------------------------------------------------------------
    Profiling
@@ -46,7 +46,7 @@ val timerl_dispatcher = [
   ("send", send_timer),
   ("wait", wait_timer),
   ("sort", sort_timer),
-  ("dispatch_timer",dispatch_timer)
+  ("latency",dispatch_timer)
   ]  
   
 fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
@@ -391,6 +391,18 @@ fun cpl_compare24 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
   
 val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
 
+fun report iter oldsc (sc,speed,acc,conf) =
+  if sc >= oldsc then () else
+  let 
+    val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
+    val accs = r4 (int_div acc exln)
+    val confs = r4 (int_div conf exln)
+    val speeds = r4 (int_div speed exln)
+  in
+    pe (its iter ^ ": " ^
+      "sc " ^ scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds)
+  end
+
 fun dispatcher s =  
   let 
      val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
@@ -403,7 +415,7 @@ fun dispatcher s =
     val exltot = ex_of_sentencel sentencel
     val exln = length exltot
     val _ = pe (its exln ^ " examples from " ^ 
-                its (length sentencel) ^ "sentences")
+                its (length sentencel) ^ " sentences")
     fun loop oldsc iter =
       if iter >= itertot then 
         (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
@@ -414,13 +426,7 @@ fun dispatcher s =
         val scl = total_time wait_timer dispatcher_wait ncore
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
-        val _ = if sc < oldsc then
-            pe (its iter ^ ": " ^
-                "sc " ^ r4 (int_div sc (exln * scaling)) ^ 
-                ", acc " ^ r4 (int_div acc exln) ^
-                ", conf " ^ r4 (int_div conf exln) ^ 
-                ", speed " ^ r4 (int_div speed exln))
-            else ()
+        val _ = 
         val oldwinner = ! (#1 (net_sub pfn node))
         val winnero = if winner = oldwinner then NONE else SOME winner
         val _ = write_winner winnero
@@ -475,6 +481,7 @@ val pfn = hill_para ncore nprog (depth,width) niter;
 
 17500 statistics: wait 5239.88s, send 570.00s, sort 9.99s
 17502: sc 0.4686, acc 0.8056, conf 78.7434, speed 29.7380
+300 ms per iter and latency over 50 percent.
 
 *)
 

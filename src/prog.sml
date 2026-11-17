@@ -219,10 +219,10 @@ end (* struct *)
 (*
 load "prog"; open prog; open kernel aiLib;
 val sl2 = read_oeis ();
-val sl3 = dict_sort compare_imin (map_assoc length sl2);
-val sl4 = first_n 2000 sl3;
-print_endline (its (sum_int (map snd sl4)) ^ " examples");
-writel "aaa_test1000" (map (ilts o fst) (shuffle sl4));
+val sl3 = map fst (dict_sort compare_imin (map_assoc length sl2));
+val sl4 = map binl_of_idl (first_n 1000 sl3); 
+print_endline (its (sum_int (map length sl4)) ^ " examples");
+writel "aaa_test1000" (map ilts (shuffle sl4));
 
 
 *)
