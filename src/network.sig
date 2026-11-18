@@ -56,4 +56,8 @@ sig
     (int * int * int * int)
   val score_nodep : pfn -> ex -> (negpos * int)
   
+  (* inference *)
+  val infer : pfn -> iv -> real
+  
+  
 end

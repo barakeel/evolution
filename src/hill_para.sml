@@ -3,72 +3,19 @@ struct
 
 open HolKernel aiLib kernel exec prog network
 
-val expdir = "/dev/shm/thibault"
-val train_file = selfdir ^ "/aaa_test1000"
-
-(* --------------------------------------------------------------------------
-   Profiling
-   -------------------------------------------------------------------------- *)
-   
-val dep_timer = ref 0.0
-val score01_timer = ref 0.0
-val scoreprog_timer = ref 0.0
-val stats_timer = ref 0.0
-val minor_timer = ref 0.0
-val gen_timer = ref 0.0
-val npl_timer = ref 0.0
-val send_timer = ref 0.0
-val wait_timer = ref 0.0
-val sort_timer = ref 0.0
-val barrier_timer = ref 0.0
-val read_pdel_timer = ref 0.0
-val write_worker_timer = ref 0.0
-val score_total_timer = ref 0.0
-val dispatch_timer = ref 0.0
-
-val stats_freq = ref 100
-
-val timerl_worker = [
-  ("sc01", score01_timer),
-  ("dep", dep_timer),
-  ("scp", scoreprog_timer),
-  ("gen", gen_timer),
-  ("stats", stats_timer),
-  ("minor", minor_timer),
-  ("npl", npl_timer),
-  ("barrier", barrier_timer),
-  ("read_pdel", read_pdel_timer),
-  ("write_worker", write_worker_timer),
-  ("score_total", score_total_timer)
-  ]
-  
-val timerl_dispatcher = [
-  ("send", send_timer),
-  ("wait", wait_timer),
-  ("sort", sort_timer),
-  ("latency",dispatch_timer)
-  ]  
-  
-fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
-  raise Msg ("combine: " ^ its (length l1) ^ " <> " ^ its (length l2))
-  
 (* --------------------------------------------------------------------------
    Helpers
    -------------------------------------------------------------------------- *)
 
+fun combine_err (l1,l2) = combine (l1,l2) handle HOL_ERR _ =>
+  raise Msg ("combine: " ^ its (length l1) ^ " <> " ^ its (length l2))
+
 fun rmDir_err dir =
   if exists_file dir then OS.FileSys.rmDir dir else ()
 
-(* Create a named pipe (FIFO) safely *)
 fun create_fifo path =
-  if exists_file path then () else 
-    Posix.FileSys.mkfifo (
-      path, 
-      Posix.FileSys.S.flags [
-        Posix.FileSys.S.irusr, 
-        Posix.FileSys.S.iwusr
-      ]
-    )
+  Posix.FileSys.mkfifo (path, 
+    Posix.FileSys.S.flags [Posix.FileSys.S.irusr, Posix.FileSys.S.iwusr])
 
 val sti = string_to_int 
 fun nts (n,p) = (its n ^ "-" ^ its p)
@@ -121,6 +68,126 @@ fun net_all f net = Vector.all (fn v => Vector.all f v) net
 fun is_clean cache = net_all (fn x => !x = cache_empty) cache
 
 (* --------------------------------------------------------------------------
+   Communication files
+   -------------------------------------------------------------------------- *)
+
+val shmdir = "/dev/shm/thibault"
+val expname_glob = ref "default" 
+fun expdir () = selfdir ^ "/exp/" ^ !expname_glob
+fun read_exl trainfile  = 
+  let 
+    val l1 = map stil (readl trainfile)
+    val l2 = ex_of_sentencel l1
+  in
+    pe (its (length l2) ^ " examples from " ^ its (length l1) ^ " sentences");
+    l2
+  end
+
+(* dispatcher files *)
+fun dispatcher_fifo wid = shmdir ^ "/dispatcher" ^ its wid ^ "fifo"
+fun send_dispatcher_fifo wid =
+  let val out = TextIO.openOut (dispatcher_fifo wid) in
+    TextIO.output (out, "go\n"); TextIO.closeOut out
+  end
+fun receive_dispatcher_fifo wid = 
+  let 
+    val stream = TextIO.openIn (dispatcher_fifo wid)
+    val line = TextIO.inputLine stream
+    val _ = TextIO.closeIn stream
+  in
+    case line of
+      NONE => raise Msg ("receive_dispatcher_fifo: " ^ its wid)
+    | SOME _ => ()
+  end
+
+val pl_file = shmdir ^ "/pl"
+val node_file = shmdir ^ "/node"
+fun write_pl pl = writel pl_file (map szip_prog pl)
+fun read_pl () = map sunzip_prog (readl pl_file)
+fun write_node node = writel node_file [nts node]
+fun read_node () = stn (hd (readl node_file))
+val winner_file = shmdir ^ "/winner"
+fun write_winner po = case po of 
+     NONE => writel winner_file ["nowinner"] 
+   | SOME p => writel winner_file [szip_prog p]
+fun read_winnero () = 
+  let val s = hd (readl winner_file) in
+    if s = "nowinner" then NONE else SOME (sunzip_prog s)
+  end
+
+(* worker files *)
+fun worker_fifo wid = shmdir ^ "/worker" ^ its wid ^ "fifo"
+fun send_worker_fifo wid =
+  let val out = TextIO.openOut (worker_fifo wid) in
+    TextIO.output (out, "done\n"); TextIO.closeOut out
+  end
+fun receive_worker_fifo wid = 
+  let 
+    val stream = TextIO.openIn (worker_fifo wid)
+    val line = TextIO.inputLine stream
+    val _ = TextIO.closeIn stream
+  in
+    case line of 
+      NONE => raise Msg ("receive_worker_fifo: " ^ its wid)
+    | SOME _ => ()
+  end
+  
+fun worker_file wid = shmdir ^ "/worker" ^ its wid
+fun write_worker wid scorel = writel (worker_file wid) (map its4 scorel)
+fun read_worker wid = 
+  let 
+    val file = worker_file wid
+    val r = map sti4 (readl file) 
+  in
+    remove_file file; r
+  end  
+
+(* --------------------------------------------------------------------------
+   Profiling
+   -------------------------------------------------------------------------- *)
+   
+val dep_timer = ref 0.0
+val score01_timer = ref 0.0
+val scoreprog_timer = ref 0.0
+val stats_timer = ref 0.0
+val minor_timer = ref 0.0
+val gen_timer = ref 0.0
+val npl_timer = ref 0.0
+val send_timer = ref 0.0
+val wait_timer = ref 0.0
+val sort_timer = ref 0.0
+val barrier_timer = ref 0.0
+val read_pdel_timer = ref 0.0
+val write_worker_timer = ref 0.0
+val score_total_timer = ref 0.0
+val dispatch_timer = ref 0.0
+
+val stats_freq = ref 100
+
+val timerl_worker = [
+  ("sc01", score01_timer),
+  ("dep", dep_timer),
+  ("scp", scoreprog_timer),
+  ("gen", gen_timer),
+  ("stats", stats_timer),
+  ("minor", minor_timer),
+  ("npl", npl_timer),
+  ("barrier", barrier_timer),
+  ("read_pdel", read_pdel_timer),
+  ("write_worker", write_worker_timer),
+  ("score_total", score_total_timer)
+  ]
+  
+val timerl_dispatcher = [
+  ("send", send_timer),
+  ("wait", wait_timer),
+  ("sort", sort_timer),
+  ("latency",dispatch_timer)
+  ]  
+  
+
+
+(* --------------------------------------------------------------------------
    Statistics
    -------------------------------------------------------------------------- *)
 
@@ -156,46 +223,11 @@ fun stats_dispatcher iter =
       ^ "s"
   in
     pe (its iter ^ " statistics: " ^ timers)
-   end
-
-(* --------------------------------------------------------------------------
-   Communication files
-   -------------------------------------------------------------------------- *)
-
-val pl_file = expdir ^ "/pl"
-val node_file = expdir ^ "/node"
-
-fun write_pl pl = writel pl_file (map szip_prog pl)
-fun read_pl () = map sunzip_prog (readl pl_file)
-fun write_node node = writel node_file [nts node]
-fun read_node () = stn (hd (readl node_file))
-
-val winner_file = expdir ^ "/winner"
-fun write_winner po = case po of 
-     NONE => writel winner_file ["nowinner"] 
-   | SOME p => writel winner_file [szip_prog p]
-
-fun read_winnero () = 
-  let val s = hd (readl winner_file) in
-    if s = "nowinner" then NONE else SOME (sunzip_prog s)
   end
-
-fun worker_file wid = expdir ^ "/worker" ^ its wid
-fun write_worker wid scorel = 
-  writel (worker_file wid) (map its4 scorel)
-fun read_worker wid = map sti4 (readl (worker_file wid))
 
 (* --------------------------------------------------------------------------
    Worker
    -------------------------------------------------------------------------- *)
-
-fun read_exl (ncore,wid) = 
-  let 
-    val sentencel = map stil (readl train_file) 
-    val exltot = ex_of_sentencel sentencel
-  in
-    List.nth (cut_n ncore exltot, wid)
-  end
 
 (* read candidates *)
 fun read_pdel pfn =   
@@ -255,7 +287,7 @@ fun score_npexl pfn (node,pdel) npexl =
   end
 
 fun read_winner_wrapper () =
-  let val file = expdir ^ "/winner" in
+  let val file = shmdir ^ "/winner" in
     if not (exists_file file) then NONE else read_winnero ()
   end
 
@@ -263,40 +295,32 @@ fun update_prog_wrapper pfn npl01o po = case po of
    NONE => () 
  | SOME p => update_prog pfn p (#3 (valOf npl01o))
 
+
+
+fun write_worker_wrap wid scorel =
+  (write_worker wid scorel; send_worker_fifo wid)
+
 fun worker s =
-  let 
+  let
+    val wid = sti s
     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_worker)
-    val (ncore,wid) = stn s
-    val exl = read_exl (ncore,wid)
-    val pfn = read_pfn (expdir ^ "/pfn_init")
-    val itertot = sti (hd (readl (expdir ^ "/itertot")))
+    val (expname,trainfile,s3,s4,s5) = 
+      quintuple_of_list (readl (shmdir ^ "/param"))
+    val _ = expname_glob := expname
+    val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
+    val pfn = read_pfn (shmdir ^ "/pfn_init")
+    val exl = List.nth (cut_n ncore (read_exl trainfile), wid)
     val rt = Timer.startRealTimer ()
-    val b_fifo = expdir ^ "/barrier_" ^ its wid
-    val done_fifo = worker_file wid ^ "_done"
     fun loop npl01o iter =
-      if iter >= itertot then "done" else
+      if iter >= itertot then "done" else        
       let
-        val _ = total_time barrier_timer (fn () =>
-          let
-            val stream = TextIO.openIn b_fifo
-            val _ = TextIO.inputLine stream
-            val _ = TextIO.closeIn stream
-          in () end) ()
+        val _ = total_time barrier_timer receive_dispatcher_fifo wid
         val po = read_winner_wrapper ()
+        val (node,pdel) = total_time read_pdel_timer read_pdel pfn
         val _ = update_prog_wrapper pfn npl01o po
-        val npexl = total_time npl_timer 
-          (update_npexl pfn exl npl01o) po
-        val (node,pdel) = total_time read_pdel_timer
-          read_pdel pfn
+        val npexl = total_time npl_timer (update_npexl pfn exl npl01o) po
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
-        val _ = total_time write_worker_timer (fn () =>
-          let
-            val file = worker_file wid
-            val _ = writel file (map its4 scorel)
-            val out = TextIO.openOut done_fifo
-            val _ = TextIO.output (out, "done\n")
-            val _ = TextIO.closeOut out
-          in () end) ()
+        val _ = total_time write_worker_timer (write_worker_wrap wid) scorel
         val _ = total_time stats_timer (stats_worker rt) iter
       in
         loop (SOME (npl01,npexl,node)) (iter + 1)
@@ -320,12 +344,7 @@ fun dispatcher_send iter nprog pfn ncore =
     val pl = random_pl p nprog
   in
     write_node node; write_pl pl;
-    app (fn wid =>
-      let
-        val out = TextIO.openOut (expdir ^ "/barrier_" ^ its wid)
-        val _ = TextIO.output (out, "go\n")
-        val _ = TextIO.closeOut out
-      in () end) (List.tabulate (ncore, fn i => i));
+    ignore (List.tabulate (ncore, send_dispatcher_fifo));
     (node,pl)
   end
 
@@ -342,33 +361,22 @@ fun end_rt_dispatch () =
 fun dispatcher_wait_all v ncore =
   let
     val bstart = ref false
-    fun loop () =
-      if Vector.all (isSome o !) v then ()
-      else (
-        Vector.appi (fn (wid, r) =>
-          if isSome (!r) then ()
-          else let
-            val file = worker_file wid
-            val done_fifo = file ^ "_done"
-            val stream = TextIO.openIn done_fifo
-            val line = TextIO.inputLine stream
-            val _ = TextIO.closeIn stream
-          in
-            case line of
-              NONE => ()
-            | SOME _ => 
-                let 
-                  val _ = if !bstart then () else
-                    (start_rt_dispatch (); bstart := true)
-                  val x = read_worker wid 
-                  val _ = remove_file file
-                in 
-                  r := SOME x 
-                end
-          end handle Interrupt => raise Interrupt | _ => ()
-        ) v;
-        OS.Process.sleep (Time.fromReal 0.0001); 
-        loop ()
+    fun f (wid,r) = if isSome (!r) then () else
+      (
+      let
+        val _ = receive_worker_fifo wid
+        val _ = if !bstart then () else (start_rt_dispatch (); bstart := true)
+        val x = read_worker wid
+      in 
+        r := SOME x 
+      end 
+      handle Interrupt => raise Interrupt | _ => ()
+      ) 
+    fun loop () = if Vector.all (isSome o !) v then () else 
+      (
+      Vector.appi f v;
+      OS.Process.sleep (Time.fromReal 0.0001); 
+      loop ()
       )
   in
     loop ();
@@ -376,7 +384,7 @@ fun dispatcher_wait_all v ncore =
   end  
   
 
-fun dispatcher_wait ncore =  
+fun dispatcher_receive ncore =  
   let
     val v = Vector.tabulate (ncore, fn _ => ref NONE)
     val _ = dispatcher_wait_all v ncore
@@ -403,27 +411,26 @@ fun report exln iter oldsc (sc,speed,acc,conf) =
       "sc " ^ scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds)
   end
 
-fun dispatcher s =  
+fun export_network pfn iter itertot = 
+  if iter = itertot-1 orelse iter mod 10000 = ~1
+  then write_pfn (expdir () ^ "/pfn" ^ its (iter+1)) pfn
+  else ()
+
+fun dispatcher () =  
   let 
-     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
-    val (s1,s2,s3) = split_triple #" " s
-    val ncore = sti s2
-    val nprog = sti s3
-    val pfn = read_pfn (expdir ^ "/pfn_init")
-    val itertot = sti (hd (readl (expdir ^ "/itertot")))
-    val sentencel = map stil (readl train_file) 
-    val exltot = ex_of_sentencel sentencel
-    val exln = length exltot
-    val _ = pe (its exln ^ " examples from " ^ 
-                its (length sentencel) ^ " sentences")
+    val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
+    val (expname,trainfile,s3,s4,s5) = 
+      quintuple_of_list (readl (shmdir ^ "/param"))
+    val _ = expname_glob := expname
+    val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
+    val pfn = read_pfn (shmdir ^ "/pfn_init")
+    val exln = length (read_exl trainfile)
     fun loop oldsc iter =
-      if iter >= itertot then 
-        (write_pfn (expdir ^ "/pfn_final") pfn; "done") 
-      else 
+      if iter >= itertot then "done" else  
       let
         val (node,pl) = total_time send_timer
           (dispatcher_send iter nprog pfn) ncore
-        val scl = total_time wait_timer dispatcher_wait ncore
+        val scl = total_time wait_timer dispatcher_receive ncore
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
         val _ = report exln iter oldsc (sc,speed,acc,conf)
@@ -432,6 +439,7 @@ fun dispatcher s =
         val _ = write_winner winnero
         val _ = stats_dispatcher iter
         val _ = if winner = oldwinner then () else update_prog pfn winner node
+        val _ = export_network pfn iter itertot
       in
         loop sc (iter + 1)
       end
@@ -444,29 +452,31 @@ fun dispatcher s =
    -------------------------------------------------------------------------- *)
 
 fun job s = 
-  if String.isPrefix "dispatcher" s then dispatcher s else worker s
+  if String.isPrefix "dispatcher" s then dispatcher () else worker s
 
-fun hill_para ncore nprog (depth,width) itertot =
+fun hill_para expname trainfile ncore nprog itertot (depth,width) =
   let
-    val _ = clean_dir expdir
-    val _ = write_pfn (expdir ^ "/pfn_init") (init_pfn (depth,width))
-    val _ = writel (expdir ^ "/itertot") [its itertot]
-    val _ = List.app (fn i => create_fifo (expdir ^ "/barrier_" ^ its i)) 
-                     (List.tabulate (ncore, fn i => i))
-    val _ = List.app (fn i => create_fifo (worker_file i ^ "_done")) 
-                     (List.tabulate (ncore, fn i => i))
-
-    val sl = map nts (List.tabulate (ncore, fn i => (ncore,i)))
-    val s = "dispatcher" ^ " " ^ its ncore ^ " " ^ its nprog          
-    val _ = parmap_sl (ncore + 1) "hill_para.job" (s :: sl)
+    val _ = expname_glob := expname
+    val _ = app mkDir_err [selfdir ^ "/exp",expdir ()]
+    val _ = clean_dir shmdir
+    val _ = writel (shmdir ^ "/param") 
+      [expname, trainfile, its ncore, its nprog, its itertot]
+    val _ = write_pfn (shmdir ^ "/pfn_init") (init_pfn (depth,width))
+    val _ = List.tabulate (ncore, fn i => create_fifo (dispatcher_fifo i)) 
+    val _ = List.tabulate (ncore, fn i => create_fifo (worker_fifo i))
+    val sl = "dispatcher" :: List.tabulate (ncore, its)
+    val _ = parmap_sl (ncore + 1) "hill_para.job" sl
   in
-    read_pfn (expdir ^ "/pfn_final")
+    ()
   end 
 
 end (* struct *)
 
 (*
 load "hill_para";
+
+todo create a parameter file that contain all parameters replace itertot 
+and also have a training file name and a optional pfn name?.
 
 PolyML.print_depth 0; 
 open kernel aiLib prog exec network hill_para;
@@ -476,12 +486,18 @@ val (depth,width) = (8,1000);
 val nprog = 1000;
 val ncore = 50;
 val niter = 1000000;
+val expname = "test"
+val trainfile = selfdir ^ "/aaa_test1000"
 
-val pfn = hill_para ncore nprog (depth,width) niter;
+val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 
 17500 statistics: wait 5239.88s, send 570.00s, sort 9.99s
 17502: sc 0.4686, acc 0.8056, conf 78.7434, speed 29.7380
 300 ms per iter and latency over 50 percent.
+
+70800 statistics: wait 89613.54s, latency 24159.12s, send 2391.73s, sort 41.86s
+70803: sc 0.2438, acc 0.8663, conf 28.6556, speed 0.8366
+70804: sc 0.2438, acc 0.8663, conf 28.6565, speed 1.4130
 
 *)
 

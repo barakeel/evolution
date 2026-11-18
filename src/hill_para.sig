@@ -9,6 +9,6 @@ sig
   type negpos = network.negpos
 
   val job : string -> string
-  val hill_para : int -> int -> (int * int) -> int -> pfn
-   
+  val hill_para : string -> string -> int -> int -> int -> (int * int) -> unit
+
 end

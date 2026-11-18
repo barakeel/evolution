@@ -99,9 +99,11 @@ fun read_pfn file = Vector.fromList (map read_pv (readl file))
    Initialize examples
    -------------------------------------------------------------------------- *)
 
+val starttoken = [0,0,0,0]
+
 fun ex_of_sentence sentence = 
   let 
-    val sentencev = Vector.fromList (0 :: 0 :: 0 :: 0 :: sentence)
+    val sentencev = Vector.fromList (starttoken @ sentence)
     fun f i = if i < 4 then NONE else
       SOME (fn x => Vector.sub (sentencev, x mod i), Vector.sub (sentencev, i))
   in
@@ -341,6 +343,29 @@ fun score_nodep pfn (inputf,obj) =
     (negpos,sc)
   end
 
+fun proba_negpos (neg,pos) =
+  let val total = neg + pos in
+    if total = 0 then 0.5 else int_div pos total
+  end
+
+(* --------------------------------------------------------------------------
+   Inference
+   -------------------------------------------------------------------------- *)
+
+fun infer pfn inputf =
+  let 
+    val (depth,width) = dim_of_net pfn
+    val nodel = cartesian_product 
+      (List.tabulate (depth,I)) (List.tabulate (width,I))
+    val cache = init_cache pfn
+    val tnodel = List.tabulate (width, fn wi => (depth - 1, wi))
+    val _ = app (compute_node_once inputf cache pfn) nodel
+    fun f node = ! (net_sub cache node) 
+    val vl = map_assoc f tnodel
+    val negpos = negpos_vl vl
+  in
+    proba_negpos negpos
+  end
 
 
 end (* struct *)
@@ -348,7 +373,31 @@ end (* struct *)
 (*
 load "network"; open aiLib kernel exec prog network;
 val pfn = init_pfn (4,1000);
-write_pfn "aaa_test" pfn;
-val newpfn = read_pfn "aaa_test";
-pfn_compare (pfn,newpfn);
+
+val starttoken = [0,0,0,0];
+
+fun sample_bit proba = if random_real () < proba then 1 else 0;
+
+fun decode_aux pfn l n = if n <= 0 then l else
+  let
+    val v = Vector.fromList l
+    val i = Vector.length v
+    fun inputf x = Vector.sub (v, x mod i)
+    val proba = infer pfn inputf
+    val bit = sample_bit proba
+  in
+    decode_aux pfn (l @ [bit]) (n-1)
+  end;
+  
+fun decode pfn n = 
+  let val l = decode_aux pfn starttoken n in
+    snd (part_n (length starttoken) l) 
+  end;
+
+val (l,t) = add_time (decode pfn) 1000;
+
+
+
+
+
 *)
