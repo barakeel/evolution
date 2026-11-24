@@ -343,9 +343,9 @@ fun dispatcher_send iter nprog pfn ncore =
     val p = ! (#1 (net_sub pfn node))
     val pl = random_pl p nprog
   in
-    write_node node; write_pl (p :: pl);
+    write_node node; write_pl pl;
     ignore (List.tabulate (ncore, send_dispatcher_fifo));
-    (node, p :: pl)
+    (node, pl)
   end
 
 val rt_dispatch = Timer.startRealTimer ()
@@ -394,10 +394,10 @@ fun dispatcher_receive ncore =
     scl
   end
   
-fun cpl_compare24 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
+fun cpl_compare12 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
   cpl_compare cmp1 cmp2 ((a1,b1),(a2,b2))
   
-val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
+val cmp_score = snd_compare (cpl_compare12 Int.compare Int.compare)
 
 fun report exln iter oldsc (sc,speed,acc,conf) =
   (* if sc >= oldsc then () else *)
@@ -406,7 +406,7 @@ fun report exln iter oldsc (sc,speed,acc,conf) =
     val accs = r4 (int_div acc exln)
     val confs = r4 (int_div conf exln)
     val speeds = r4 (int_div speed exln)
-    val s = its iter ^ ": " ^ "sc " ^ 
+    val s = its iter ^ ": " ^ "sc " ^ its sc ^ " " 
       scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
   in
     pe s; append_endline (expdir () ^ "/stats") s
@@ -437,17 +437,16 @@ fun dispatcher () =
         fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
         val _ = report exln iter oldsc (sc,speed,acc,conf)
-        val oldwinner = ! (#1 (net_sub pfn node))
         val winnero = 
-          if winner = oldwinner then NONE else 
-            (update_prog pfn winner node; SOME winner)
+          if winner = ! (#1 (net_sub pfn node)) then NONE else 
+          (update_prog pfn winner node; SOME winner)
         val _ = write_winner winnero
         val _ = stats_dispatcher iter        
       in
         loop sc (iter + 1)
       end
   in
-    loop 0 0
+    loop Int.maxInt 0
   end
 
 (* --------------------------------------------------------------------------
@@ -477,7 +476,7 @@ end (* struct *)
 
 (*
 
-(todo start with a network instead of depth,width)
+
 
 load "hill_para";
 
@@ -503,5 +502,6 @@ val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 70803: sc 0.2438, acc 0.8663, conf 28.6556, speed 0.8366
 70804: sc 0.2438, acc 0.8663, conf 28.6565, speed 1.4130
 12000ms per iter
+(todo start with a network instead of depth,width)
 *)
 
