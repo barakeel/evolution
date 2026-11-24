@@ -446,7 +446,7 @@ fun dispatcher () =
         loop sc (iter + 1)
       end
   in
-    loop Int.maxInt 0
+    loop (valOf Int.maxInt) 0
   end
 
 (* --------------------------------------------------------------------------
@@ -475,9 +475,6 @@ fun hill_para expname trainfile ncore nprog itertot (depth,width) =
 end (* struct *)
 
 (*
-
-
-
 load "hill_para";
 
 PolyML.print_depth 0; 
