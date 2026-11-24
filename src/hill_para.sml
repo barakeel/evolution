@@ -406,7 +406,7 @@ fun report exln iter oldsc (sc,speed,acc,conf) =
     val accs = r4 (int_div acc exln)
     val confs = r4 (int_div conf exln)
     val speeds = r4 (int_div speed exln)
-    val s = its iter ^ ": " ^ "sc " ^ its sc ^ " " 
+    val s = its iter ^ ": " ^ "sc " ^ its sc ^ " " ^
       scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
   in
     pe s; append_endline (expdir () ^ "/stats") s
