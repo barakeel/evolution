@@ -343,9 +343,9 @@ fun dispatcher_send iter nprog pfn ncore =
     val p = ! (#1 (net_sub pfn node))
     val pl = random_pl p nprog
   in
-    write_node node; write_pl pl;
+    write_node node; write_pl (p :: pl);
     ignore (List.tabulate (ncore, send_dispatcher_fifo));
-    (node,pl)
+    (node, p :: pl)
   end
 
 val rt_dispatch = Timer.startRealTimer ()
@@ -438,11 +438,11 @@ fun dispatcher () =
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
         val _ = report exln iter oldsc (sc,speed,acc,conf)
         val oldwinner = ! (#1 (net_sub pfn node))
-        val winnero = if winner = oldwinner then NONE else SOME winner
+        val winnero = 
+          if winner = oldwinner then NONE else 
+            (update_prog pfn winner node; SOME winner)
         val _ = write_winner winnero
-        val _ = stats_dispatcher iter
-        val _ = if winner = oldwinner then () else update_prog pfn winner node
-        
+        val _ = stats_dispatcher iter        
       in
         loop sc (iter + 1)
       end
