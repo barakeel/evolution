@@ -284,7 +284,7 @@ fun score_01 cache pfn (nb,pb) (di,wi) (inputf,obj) =
     val ((n0,p0),(n1,p1)) = 
       negpos_01 cache pfn (di,wi) inputf (nodel,tnodel) (nd,pd)
     val np0 = (nh + n0, ph + p0) 
-    val np1 = (nh + n1, ph + p1) 
+    val np1 = (nh + n1, ph + p1)
   in
     (np0,np1)
   end

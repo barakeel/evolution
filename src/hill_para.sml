@@ -406,14 +406,16 @@ fun report exln iter oldsc (sc,speed,acc,conf) =
     val accs = r4 (int_div acc exln)
     val confs = r4 (int_div conf exln)
     val speeds = r4 (int_div speed exln)
+    val s = its iter ^ ": " ^ "sc " ^ 
+      scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
   in
-    pe (its iter ^ ": " ^
-      "sc " ^ scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds)
+    pe s; append_endline (expdir () ^ "/stats") s
   end
 
+(* maybe do some test at the moment of export *)
 fun export_network pfn iter itertot = 
-  if iter = itertot-1 orelse iter mod 10000 = ~1
-  then write_pfn (expdir () ^ "/pfn" ^ its (iter+1)) pfn
+  if iter = itertot orelse iter mod 10000 = 0
+  then write_pfn (expdir () ^ "/pfn" ^ its iter) pfn
   else ()
 
 fun dispatcher () =  
@@ -426,8 +428,9 @@ fun dispatcher () =
     val pfn = read_pfn (shmdir ^ "/pfn_init")
     val exln = length (read_exl trainfile)
     fun loop oldsc iter =
-      if iter >= itertot then "done" else  
+      if iter >= itertot then (export_network pfn iter itertot; "done") else  
       let
+        val _ = export_network pfn iter itertot
         val (node,pl) = total_time send_timer
           (dispatcher_send iter nprog pfn) ncore
         val scl = total_time wait_timer dispatcher_receive ncore
@@ -439,7 +442,7 @@ fun dispatcher () =
         val _ = write_winner winnero
         val _ = stats_dispatcher iter
         val _ = if winner = oldwinner then () else update_prog pfn winner node
-        val _ = export_network pfn iter itertot
+        
       in
         loop sc (iter + 1)
       end
@@ -473,21 +476,21 @@ fun hill_para expname trainfile ncore nprog itertot (depth,width) =
 end (* struct *)
 
 (*
-load "hill_para";
 
-todo create a parameter file that contain all parameters replace itertot 
-and also have a training file name and a optional pfn name?.
+(todo start with a network instead of depth,width)
+
+load "hill_para";
 
 PolyML.print_depth 0; 
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (8,1000);
-val nprog = 1000;
+val (depth,width) = (500,16);
+val nprog = 10000;
 val ncore = 50;
-val niter = 1000000;
-val expname = "test"
-val trainfile = selfdir ^ "/aaa_test1000"
+val niter = 100000;
+val expname = "net500-16"
+val trainfile = selfdir ^ "/aaa_test1000";
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 
