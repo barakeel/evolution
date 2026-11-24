@@ -400,7 +400,7 @@ fun cpl_compare24 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
 val cmp_score = snd_compare (cpl_compare24 Int.compare Int.compare)
 
 fun report exln iter oldsc (sc,speed,acc,conf) =
-  if sc >= oldsc then () else
+  (* if sc >= oldsc then () else *)
   let 
     val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
     val accs = r4 (int_div acc exln)
@@ -485,12 +485,13 @@ PolyML.print_depth 0;
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (500,16);
-val nprog = 10000;
+val (depth,width) = (1000,8);
+val nprog = 200;
 val ncore = 50;
 val niter = 100000;
-val expname = "net500-16"
-val trainfile = selfdir ^ "/aaa_test1000";
+val expname = "net" ^ "-" ^ 
+ its depth ^ "-" ^ its width ^ "-" ^ its nprog ^ "-" ^ its niter;
+val trainfile = selfdir ^ "/aaa_test1000"; (* 30,000 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 
@@ -501,6 +502,6 @@ val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 70800 statistics: wait 89613.54s, latency 24159.12s, send 2391.73s, sort 41.86s
 70803: sc 0.2438, acc 0.8663, conf 28.6556, speed 0.8366
 70804: sc 0.2438, acc 0.8663, conf 28.6565, speed 1.4130
-
+12000ms per iter
 *)
 
