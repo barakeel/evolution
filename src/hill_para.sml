@@ -400,13 +400,13 @@ fun cpl_compare12 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
 val cmp_score = snd_compare (cpl_compare12 Int.compare Int.compare)
 
 fun report exln iter oldsc (sc,speed,acc,conf) =
-  (* if sc >= oldsc then () else *)
+  if sc >= oldsc then () else
   let 
     val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
     val accs = r4 (int_div acc exln)
     val confs = r4 (int_div conf exln)
     val speeds = r4 (int_div speed exln)
-    val s = its iter ^ ": " ^ "sc " ^ its sc ^ " " ^
+    val s = its iter ^ ": " ^ "sc " 
       scs ^ ", acc " ^ accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
   in
     pe s; append_endline (expdir () ^ "/stats") s
@@ -440,6 +440,7 @@ fun dispatcher () =
         val winnero = 
           if winner = ! (#1 (net_sub pfn node)) then NONE else 
           (update_prog pfn winner node; SOME winner)
+        val _ = pe (if isSome winnero then "winner" else "loser")
         val _ = write_winner winnero
         val _ = stats_dispatcher iter        
       in
@@ -481,15 +482,15 @@ PolyML.print_depth 0;
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (1000,8);
-val nprog = 200;
+val (depth,width) = (4,2000);
+val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
-val expname = "net" ^ "-" ^ 
- its depth ^ "-" ^ its width ^ "-" ^ its nprog ^ "-" ^ its niter;
+val expname = "net" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog
 val trainfile = selfdir ^ "/aaa_test1000"; (* 30,000 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
+
 
 17500 statistics: wait 5239.88s, send 570.00s, sort 9.99s
 17502: sc 0.4686, acc 0.8056, conf 78.7434, speed 29.7380
