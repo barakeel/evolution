@@ -444,6 +444,13 @@ fun hill_para expname trainfile ncore nprog itertot (depth,width) =
   let
     val _ = expname_glob := expname
     val _ = app mkDir_err [selfdir ^ "/exp",expdir ()]
+    val _ = writel (expdir () ^ "/param") 
+      ["expname: " ^ expname, 
+       "trainfile: " ^ trainfile, 
+       "ncore: " ^ its ncore, 
+       "nprog: " ^ its nprog, 
+       "itertot: " ^ its itertot,
+       "depth-width: " ^ its depth ^ "-" ^ its width]
     val _ = clean_dir shmdir
     val _ = writel (shmdir ^ "/param") 
       [expname, trainfile, its ncore, its nprog, its itertot]
@@ -469,7 +476,7 @@ val (depth,width) = (8,1000);
 val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
-val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog
+val expname = "exp0"
 val trainfile = selfdir ^ "/aaa_test1000"; (* 30444 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
