@@ -191,35 +191,38 @@ fun end_rt_dispatch () =
 val r2 = rts_pad 2
 val r4 = rts_pad 4
 
-fun stats_worker rt iter =
+fun stats_worker wid rt iter =
   if iter = 0 orelse iter mod !stats_freq <> 0 then () else
   let
     val ku = Real.round (int_div (!run_time) (iter * 1000))
-    val t = Time.toReal (Timer.checkRealTimer rt)
-    val ti = (t - !stats_timer) / Real.fromInt iter
+    val total = Time.toReal (Timer.checkRealTimer rt)
+    val ti = total / Real.fromInt iter
     fun f (x,t) = if !t < epsilon then NONE else 
                     SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
       (map fst (dict_sort compare_rmax (List.mapPartial f timerl_worker))) 
       ^ "s"
+    val s =  
+      its iter ^ ": " ^ r2 (ti * 1000.0) ^ "ms/i, " ^ its ku ^ "ku/i, " ^
+       "total " ^ r2 total ^ "s: " ^ timers
   in
-    pe (
-        its iter ^ ": statistics" ^
-        "\n  iter: " ^ r2 (ti * 1000.0) ^ "ms/i, " ^ its ku ^ "ku/i" ^
-        "\n  total " ^ r2 t ^ "s: " ^ timers
-       )
-   end
+    pe s; 
+    if wid = 0 
+    then append_endline (expdir () ^ "/timer") ("worker0 " ^ s) else ()  
+  end
 
-fun stats_dispatcher iter =
+fun stats_dispatcher rt iter =
   if iter = 0 orelse iter mod !stats_freq <> 0 then () else
   let
+    val total = Time.toReal (Timer.checkRealTimer rt)
     fun f (x,t) = if !t < epsilon then NONE else 
                     SOME (x ^ " " ^ r2 (!t), !t) 
     val timers = String.concatWith "s, " 
       (map fst (dict_sort compare_rmax (List.mapPartial f timerl_dispatcher))) 
       ^ "s"
+    val s = "dispatcher " ^ its iter ^ ": total " ^ r2 total ^ "s, " ^ timers
   in
-    pe (its iter ^ " statistics: " ^ timers)
+    pe s; append_endline (expdir () ^ "/timer") s
   end
 
 fun report exln iter oldsc (sc,speed,acc,conf) =
@@ -331,7 +334,7 @@ fun worker s =
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
         val _ = total_time write_worker_timer 
            (send_worker_scores work_out) scorel
-        val _ = total_time stats_timer (stats_worker rt) iter
+        val _ = total_time stats_timer (stats_worker wid rt) iter
       in
         loop (SOME (npl01,npexl,node)) (iter + 1)
       end
@@ -408,6 +411,7 @@ fun dispatcher () =
     val work_ins = open_worker_ins ncore
     fun close_all () = (Vector.app TextIO.closeOut disp_outs;
                         Vector.app TextIO.closeIn work_ins)
+    val rt = Timer.startRealTimer ()
     fun loop oldsc iter =
       if iter >= itertot then
         (export_network pfn iter itertot; close_all (); "done")
@@ -425,7 +429,7 @@ fun dispatcher () =
           if winner = ! (#1 (net_sub pfn node)) then NONE else 
           (update_prog pfn winner node; SOME winner)
         val _ = write_winner winnero
-        val _ = stats_dispatcher iter        
+        val _ = stats_dispatcher rt iter        
       in
         loop sc (iter + 1)
       end
