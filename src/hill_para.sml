@@ -493,8 +493,6 @@ val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 70800 statistics: wait 89613.54s, latency 24159.12s, send 2391.73s, sort 41.86s
 70803: sc 0.2438, acc 0.8663, conf 28.6556, speed 0.8366
 70804: sc 0.2438, acc 0.8663, conf 28.6565, speed 1.4130
-12000ms per iter
-(todo start with a network instead of depth,width)
 
 43990: sc 0.2177 7474806685860, acc 0.8703, conf 20.1336, speed 0.1060
 

@@ -210,7 +210,7 @@ val zid = get_id "z"
 fun init_pfn (d,w) = 
   let
     fun f (di,wi) = 
-      let val p = Ins (zid,[]) (* (!random_prog_glob) di *) in 
+      let val p = (!random_prog_glob) di (* Ins (zid,[]) *) in 
         (ref p, ref (mk_exec p), ref [], ref []) 
       end
     val pfn = net_tabulate (d,w) f
