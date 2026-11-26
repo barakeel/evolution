@@ -472,15 +472,17 @@ end (* struct *)
 (*
 load "hill_para";
 
+(something is wrong)
+
 PolyML.print_depth 0; 
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (4,2000);
+val (depth,width) = (8,2000);
 val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
-val expname = "exp2"
+val expname = "exp5"
 val trainfile = selfdir ^ "/aaa_test1000"; (* 30444 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);

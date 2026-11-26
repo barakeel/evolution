@@ -210,7 +210,7 @@ val zid = get_id "z"
 fun init_pfn (d,w) = 
   let
     fun f (di,wi) = 
-      let val p = (!random_prog_glob) di (* Ins (zid,[]) *) in 
+      let val p = (* (!random_prog_glob) di *) Ins (zid,[]) in 
         (ref p, ref (mk_exec p), ref [], ref []) 
       end
     val pfn = net_tabulate (d,w) f
@@ -293,7 +293,7 @@ fun score_01 cache pfn (nb,pb) (di,wi) (inputf,obj) =
 
 (* --------------------------------------------------------------------------
    Execute program and associate its score
-   ------------43990: sc 0.2177 7474806685860, acc 0.8703, conf 20.1336, speed 0.1060-------------------------------------------------------------- *)
+   -------------------------------------------------------------------------- *)
 
 fun update_prog_partial pfn (di,wi) (p,dep,exec) = 
   let val (pref,fref,incoming,_) = net_sub pfn (di,wi) in
