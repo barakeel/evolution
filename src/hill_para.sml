@@ -85,20 +85,14 @@ fun read_exl trainfile  =
 
 (* dispatcher files *)
 fun dispatcher_fifo wid = shmdir ^ "/dispatcher" ^ its wid ^ "fifo"
-fun send_dispatcher_fifo wid =
-  let val out = TextIO.openOut (dispatcher_fifo wid) in
-    TextIO.output (out, "go\n"); TextIO.closeOut out
-  end
-fun receive_dispatcher_fifo wid = 
-  let 
-    val stream = TextIO.openIn (dispatcher_fifo wid)
-    val line = TextIO.inputLine stream
-    val _ = TextIO.closeIn stream
-  in
-    case line of
-      NONE => raise Msg ("receive_dispatcher_fifo: " ^ its wid)
-    | SOME _ => ()
-  end
+fun open_dispatcher_outs ncore =
+  Vector.tabulate (ncore, fn wid => TextIO.openOut (dispatcher_fifo wid))
+fun send_dispatcher_fifos outs =
+  Vector.app (fn out => (TextIO.output (out, "go\n"); TextIO.flushOut out)) outs
+fun receive_dispatcher_fifo ins wid =
+  case TextIO.inputLine ins of
+    NONE => raise Msg ("receive_dispatcher_fifo: " ^ its wid)
+  | SOME _ => ()
 
 val pl_file = shmdir ^ "/pl"
 val node_file = shmdir ^ "/node"
@@ -117,31 +111,28 @@ fun read_winnero () =
 
 (* worker files *)
 fun worker_fifo wid = shmdir ^ "/worker" ^ its wid ^ "fifo"
-fun send_worker_fifo wid =
-  let val out = TextIO.openOut (worker_fifo wid) in
-    TextIO.output (out, "done\n"); TextIO.closeOut out
-  end
-fun receive_worker_fifo wid = 
-  let 
-    val stream = TextIO.openIn (worker_fifo wid)
-    val line = TextIO.inputLine stream
-    val _ = TextIO.closeIn stream
+fun open_worker_ins ncore =
+  Vector.tabulate (ncore, fn wid => TextIO.openIn (worker_fifo wid))
+
+fun send_worker_scores out scorel =
+  (app (fn x => TextIO.output (out, its4 x ^ "\n")) scorel;
+   TextIO.output (out, "END\n");
+   TextIO.flushOut out)
+
+fun receive_worker_scores ins wid =
+  let
+    fun loop acc =
+      case TextIO.inputLine ins of
+        NONE => raise Msg ("receive_worker_scores: " ^ its wid)
+      | SOME "END\n" => rev acc
+      | SOME line =>
+          let val s = String.substring (line, 0, String.size line - 1) in
+            loop (sti4 s :: acc)
+          end
   in
-    case line of 
-      NONE => raise Msg ("receive_worker_fifo: " ^ its wid)
-    | SOME _ => ()
+    loop []
   end
   
-fun worker_file wid = shmdir ^ "/worker" ^ its wid
-fun write_worker wid scorel = writel (worker_file wid) (map its4 scorel)
-fun read_worker wid = 
-  let 
-    val file = worker_file wid
-    val r = map sti4 (readl file) 
-  in
-    remove_file file; r
-  end  
-
 (* --------------------------------------------------------------------------
    Profiling
    -------------------------------------------------------------------------- *)
@@ -185,8 +176,14 @@ val timerl_dispatcher = [
   ("latency",dispatch_timer)
   ]  
   
-
-
+val rt_dispatch = Timer.startRealTimer ()
+val rt_dispatch_mem = ref 0.0
+fun start_rt_dispatch () = 
+  rt_dispatch_mem := Time.toReal (Timer.checkRealTimer rt_dispatch)
+fun end_rt_dispatch () = 
+  dispatch_timer := !dispatch_timer + 
+    (Time.toReal (Timer.checkRealTimer rt_dispatch) - !rt_dispatch_mem)
+    
 (* --------------------------------------------------------------------------
    Statistics
    -------------------------------------------------------------------------- *)
@@ -223,6 +220,19 @@ fun stats_dispatcher iter =
       ^ "s"
   in
     pe (its iter ^ " statistics: " ^ timers)
+  end
+
+fun report exln iter oldsc (sc,speed,acc,conf) =
+  if sc >= oldsc then () else
+  let 
+    val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
+    val accs = r4 (int_div acc exln)
+    val confs = r4 (int_div conf exln)
+    val speeds = r4 (int_div speed exln)
+    val s = its iter ^ ": " ^ "sc " ^ scs ^ " "  ^ its sc ^ ", acc " ^ 
+     accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
+  in
+    pe s; append_endline (expdir () ^ "/stats") s
   end
 
 (* --------------------------------------------------------------------------
@@ -295,11 +305,6 @@ fun update_prog_wrapper pfn npl01o po = case po of
    NONE => () 
  | SOME p => update_prog pfn p (#3 (valOf npl01o))
 
-
-
-fun write_worker_wrap wid scorel =
-  (write_worker wid scorel; send_worker_fifo wid)
-
 fun worker s =
   let
     val wid = sti s
@@ -310,17 +315,22 @@ fun worker s =
     val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
     val pfn = read_pfn (shmdir ^ "/pfn_init")
     val exl = List.nth (cut_n ncore (read_exl trainfile), wid)
+    val disp_in = TextIO.openIn (dispatcher_fifo wid)
+    val work_out = TextIO.openOut (worker_fifo wid)
     val rt = Timer.startRealTimer ()
     fun loop npl01o iter =
-      if iter >= itertot then "done" else        
+      if iter >= itertot then
+        (TextIO.closeIn disp_in; TextIO.closeOut work_out; "done")
+      else        
       let
-        val _ = total_time barrier_timer receive_dispatcher_fifo wid
+        val _ = total_time barrier_timer (receive_dispatcher_fifo disp_in) wid
         val po = read_winner_wrapper ()
         val (node,pdel) = total_time read_pdel_timer read_pdel pfn
         val _ = update_prog_wrapper pfn npl01o po
         val npexl = total_time npl_timer (update_npexl pfn exl npl01o) po
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
-        val _ = total_time write_worker_timer (write_worker_wrap wid) scorel
+        val _ = total_time write_worker_timer 
+           (send_worker_scores work_out) scorel
         val _ = total_time stats_timer (stats_worker rt) iter
       in
         loop (SOME (npl01,npexl,node)) (iter + 1)
@@ -339,90 +349,52 @@ fun random_pl p nprog =
     fun loop () = if elength (!d) >= nprog then () else 
       d := eadd ((!random_prog_glob) 0) (!d)
   in
-    loop (); !d
+    loop (); elist (!d)
   end
 
-fun dispatcher_send iter nprog pfn ncore =  
+fun dispatcher_send iter nprog pfn disp_outs =  
   let 
     val node = random_node (dim_of_net pfn) 
     val p = ! (#1 (net_sub pfn node))
     val pl = random_pl p nprog
   in
     write_node node; write_pl pl;
-    ignore (List.tabulate (ncore, send_dispatcher_fifo));
+    send_dispatcher_fifos disp_outs;
     (node, pl)
   end
 
-val rt_dispatch = Timer.startRealTimer ()
-val rt_dispatch_mem = ref 0.0
-
-fun start_rt_dispatch () = 
-  rt_dispatch_mem := Time.toReal (Timer.checkRealTimer rt_dispatch)
-    
-fun end_rt_dispatch () = 
-  dispatch_timer := !dispatch_timer + 
-    (Time.toReal (Timer.checkRealTimer rt_dispatch) - !rt_dispatch_mem)
-
-fun dispatcher_wait_all v ncore =
+fun dispatcher_receive work_ins =  
   let
     val bstart = ref false
-    fun f (wid,r) = if isSome (!r) then () else
-      (
+    fun f (wid, ins) =
       let
-        val _ = receive_worker_fifo wid
+        val x = receive_worker_scores ins wid
         val _ = if !bstart then () else (start_rt_dispatch (); bstart := true)
-        val x = read_worker wid
-      in 
-        r := SOME x 
-      end 
-      handle Interrupt => raise Interrupt | _ => ()
-      ) 
-    fun loop () = if Vector.all (isSome o !) v then () else 
-      (
-      Vector.appi f v;
-      OS.Process.sleep (Time.fromReal 0.0001); 
-      loop ()
-      )
+      in
+        x
+      end
+    val scll = 
+      Vector.foldri (fn (wid, ins, acc) => f (wid, ins) :: acc) [] work_ins
+    val scl = map sum_int4 (list_combine (rev scll))
   in
-    loop ();
-    end_rt_dispatch ()
-  end  
-  
-
-fun dispatcher_receive ncore =  
-  let
-    val v = Vector.tabulate (ncore, fn _ => ref NONE)
-    val _ = dispatcher_wait_all v ncore
-    val scll = map (valOf o !) (vector_to_list v)
-    val scl = map sum_int4 (list_combine scll)
-  in
+    end_rt_dispatch ();
     scl
   end
-  
-fun cpl_compare12 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
-  cpl_compare cmp1 cmp2 ((a1,b1),(a2,b2))
-  
-val cmp_score = snd_compare (cpl_compare12 Int.compare Int.compare)
 
-fun report exln iter oldsc (sc,speed,acc,conf) =
-  if sc >= oldsc then () else
-  let 
-    val scs = r4 (1.0 - Math.exp (~ (int_div sc (exln * scaling))))
-    val accs = r4 (int_div acc exln)
-    val confs = r4 (int_div conf exln)
-    val speeds = r4 (int_div speed exln)
-    val s = its iter ^ ": " ^ "sc " ^ scs ^ " "  ^ its sc ^ ", acc " ^ 
-     accs ^ ", conf " ^ confs ^ ", speed " ^ speeds
+fun find_winner pl scl = 
+  let
+    fun cpl_compare12 cmp1 cmp2 ((a1,b1,c1,d1),(a2,b2,c2,d2)) =
+          cpl_compare cmp1 cmp2 ((a1,b1),(a2,b2))
+    val cmp_score = snd_compare (cpl_compare12 Int.compare Int.compare)
   in
-    pe s; append_endline (expdir () ^ "/stats") s
+    hd (dict_sort cmp_score (combine_err (pl,scl)))
   end
-
-(* maybe do some test at the moment of export *)
+  
 fun export_network pfn iter itertot = 
   if iter = itertot orelse iter mod 10000 = 0
   then write_pfn (expdir () ^ "/pfn" ^ its iter) pfn
-  else ()
-
+  else ()  
+  
 fun dispatcher () =  
   let 
     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
@@ -432,15 +404,22 @@ fun dispatcher () =
     val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
     val pfn = read_pfn (shmdir ^ "/pfn_init")
     val exln = length (read_exl trainfile)
+    val disp_outs = open_dispatcher_outs ncore
+    val work_ins = open_worker_ins ncore
+    fun close_all () = (Vector.app TextIO.closeOut disp_outs;
+                        Vector.app TextIO.closeIn work_ins)
     fun loop oldsc iter =
-      if iter >= itertot then (export_network pfn iter itertot; "done") else  
+      if iter >= itertot then
+        (export_network pfn iter itertot; close_all (); "done")
+      else  
       let
         val _ = export_network pfn iter itertot
         val (node,pl) = total_time send_timer
-          (dispatcher_send iter nprog pfn) ncore
-        val scl = total_time wait_timer dispatcher_receive ncore
-        fun f () = hd (dict_sort cmp_score (combine_err (pl,scl)))
-        val (winner,(sc,speed,acc,conf)) = total_time sort_timer f ()
+          (dispatcher_send iter nprog pfn) disp_outs
+        val scl = total_time wait_timer 
+          dispatcher_receive work_ins 
+        val (winner,(sc,speed,acc,conf)) = total_time sort_timer 
+          find_winner pl scl
         val _ = report exln iter oldsc (sc,speed,acc,conf)
         val winnero = 
           if winner = ! (#1 (net_sub pfn node)) then NONE else 
@@ -491,7 +470,7 @@ val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
 val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog
-val trainfile = selfdir ^ "/aaa_test1000"; (* 30,000 bits *)
+val trainfile = selfdir ^ "/aaa_test1000"; (* 30444 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 
@@ -509,4 +488,26 @@ val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 43990: sc 0.2177 7474806685860, acc 0.8703, conf 20.1336, speed 0.1060
 
 *)
+
+(* local machine test
+
+load "hill_para";
+
+PolyML.print_depth 0; 
+open kernel aiLib prog exec network hill_para;
+PolyML.print_depth 40;
+
+val (depth,width) = (4,1000);
+val nprog = 100;
+val ncore = 5;
+val niter = 100000;
+
+val trainfile = selfdir ^ "/aaa_test100"; (* 5324 bits *)
+val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog;
+
+val _ = hill_para expname trainfile ncore nprog niter (depth,width);
+
+
+*)
+
 
