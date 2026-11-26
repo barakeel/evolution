@@ -148,15 +148,7 @@ fun random_prog_size readb n =
   end   
   end
   
-fun count_readiid (Ins(i,pl)) = 
-  if i = readiid then 1 else sum_int (map count_readiid pl)
-  
-fun random_prog di = 
-  let val p = random_prog_size false (random_int (5,20)) in 
-    if count_readiid p <= 1
-    then random_prog di
-    else p
-  end
+fun random_prog di = random_prog_size false (random_int (1,20))
   
 val random_prog_glob = ref random_prog
   

@@ -334,8 +334,13 @@ fun worker s =
    -------------------------------------------------------------------------- *)
 
 fun random_pl p nprog = 
-  mk_fast_set prog_compare_size 
-    (p :: (List.tabulate (nprog, !random_prog_glob)))
+  let 
+    val d = ref (enew prog_compare [p]) 
+    fun loop () = if elength (!d) >= nprog then () else 
+      d := eadd ((!random_prog_glob) 0) (!d)
+  in
+    loop (); !d
+  end
 
 fun dispatcher_send iter nprog pfn ncore =  
   let 
@@ -440,7 +445,6 @@ fun dispatcher () =
         val winnero = 
           if winner = ! (#1 (net_sub pfn node)) then NONE else 
           (update_prog pfn winner node; SOME winner)
-        val _ = pe (if isSome winnero then "winner" else "loser")
         val _ = write_winner winnero
         val _ = stats_dispatcher iter        
       in
@@ -482,11 +486,11 @@ PolyML.print_depth 0;
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (4,2000);
+val (depth,width) = (8,1000);
 val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
-val expname = "net" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog
+val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog
 val trainfile = selfdir ^ "/aaa_test1000"; (* 30,000 bits *)
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
@@ -501,5 +505,8 @@ val _ = hill_para expname trainfile ncore nprog niter (depth,width);
 70804: sc 0.2438, acc 0.8663, conf 28.6565, speed 1.4130
 12000ms per iter
 (todo start with a network instead of depth,width)
+
+43990: sc 0.2177 7474806685860, acc 0.8703, conf 20.1336, speed 0.1060
+
 *)
 

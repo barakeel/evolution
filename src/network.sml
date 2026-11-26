@@ -293,7 +293,7 @@ fun score_01 cache pfn (nb,pb) (di,wi) (inputf,obj) =
 
 (* --------------------------------------------------------------------------
    Execute program and associate its score
-   -------------------------------------------------------------------------- *)
+   ------------43990: sc 0.2177 7474806685860, acc 0.8703, conf 20.1336, speed 0.1060-------------------------------------------------------------- *)
 
 fun update_prog_partial pfn (di,wi) (p,dep,exec) = 
   let val (pref,fref,incoming,_) = net_sub pfn (di,wi) in
