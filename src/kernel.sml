@@ -69,6 +69,10 @@ fun split_triple c s = triple_of_list (String.tokens (fn x => x = c) s)
 fun split_quadruple c s = quadruple_of_list (String.tokens (fn x => x = c) s)
   handle HOL_ERR _ => raise Msg 
     ("split_quadruple: " ^ Char.toString c ^ " " ^ s)  
+ 
+fun split_quintuple c s = quintuple_of_list (String.tokens (fn x => x = c) s)
+  handle HOL_ERR _ => raise Msg 
+    ("split_quintuple: " ^ Char.toString c ^ " " ^ s)   
   
 fun rts_pad n t =
   let val n' = 

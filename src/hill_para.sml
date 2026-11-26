@@ -22,8 +22,9 @@ fun nts (n,p) = (its n ^ "-" ^ its p)
 fun stn s = let val (a,b) = split_pair #"-" s in (sti a, sti b) end 
 
 fun its4 (n1,n2,n3,n4) = its n1 ^ "-" ^ its n2 ^ "-" ^ its n3 ^ "-" ^ its n4
-fun sti4 s = 
-  let val (a,b,c,d) = split_quadruple #"-" s in 
+fun sti4 iter s = 
+  let val (a,b,c,d,e) = split_quintuple #"-" s in 
+    if sti e <> iter then raise Msg ("sti4: " ^ its iter ^ " " ^ e) else
     (sti a, sti b, sti c, sti d) 
   end 
 
@@ -114,12 +115,12 @@ fun worker_fifo wid = shmdir ^ "/worker" ^ its wid ^ "fifo"
 fun open_worker_ins ncore =
   Vector.tabulate (ncore, fn wid => TextIO.openIn (worker_fifo wid))
 
-fun send_worker_scores out scorel =
-  (app (fn x => TextIO.output (out, its4 x ^ "\n")) scorel;
+fun send_worker_scores iter out scorel =
+  (app (fn x => TextIO.output (out, its4 x ^ "-" ^ its iter ^ "\n")) scorel;
    TextIO.output (out, "END\n");
    TextIO.flushOut out)
 
-fun receive_worker_scores ins wid =
+fun receive_worker_scores iter ins wid =
   let
     fun loop acc =
       case TextIO.inputLine ins of
@@ -127,7 +128,7 @@ fun receive_worker_scores ins wid =
       | SOME "END\n" => rev acc
       | SOME line =>
           let val s = String.substring (line, 0, String.size line - 1) in
-            loop (sti4 s :: acc)
+            loop (sti4 iter s :: acc)
           end
   in
     loop []
@@ -333,7 +334,7 @@ fun worker s =
         val npexl = total_time npl_timer (update_npexl pfn exl npl01o) po
         val (scorel,npl01) = score_npexl pfn (node,pdel) npexl
         val _ = total_time write_worker_timer 
-           (send_worker_scores work_out) scorel
+           (send_worker_scores iter work_out) scorel
         val _ = total_time stats_timer (stats_worker wid rt) iter
       in
         loop (SOME (npl01,npexl,node)) (iter + 1)
@@ -366,12 +367,12 @@ fun dispatcher_send iter nprog pfn disp_outs =
     (node, pl)
   end
 
-fun dispatcher_receive work_ins =  
+fun dispatcher_receive iter work_ins =  
   let
     val bstart = ref false
     fun f (wid, ins) =
       let
-        val x = receive_worker_scores ins wid
+        val x = receive_worker_scores iter ins wid
         val _ = if !bstart then () else (start_rt_dispatch (); bstart := true)
       in
         x
@@ -421,7 +422,7 @@ fun dispatcher () =
         val (node,pl) = total_time send_timer
           (dispatcher_send iter nprog pfn) disp_outs
         val scl = total_time wait_timer 
-          dispatcher_receive work_ins 
+          (dispatcher_receive iter) work_ins 
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer 
           find_winner pl scl
         val _ = report exln iter oldsc (sc,speed,acc,conf)
