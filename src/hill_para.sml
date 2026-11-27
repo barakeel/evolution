@@ -280,7 +280,8 @@ fun update_npexl pfn exl npl01o po = case npl01o of
 (* computes scores and memorizes npl01 for next round *)
 fun score_npex scorel cache pfn (node,pdel) (np,ex) = 
   let
-    val np01 = total_time score01_timer (score_01 cache pfn np node) ex
+    val np01 = total_time score01_timer 
+      (score_01 cache pfn np node) ex
     val restore = save_node pfn node
     val scl = total_time scoreprog_timer 
       (map (score_prog cache pfn node ex np01)) pdel
@@ -367,7 +368,7 @@ fun dispatcher_send iter nprog pfn disp_outs =
     (node, pl)
   end
 
-fun dispatcher_receive iter work_ins =  
+fun dispatcher_receive iter work_insl =  
   let
     val bstart = ref false
     fun f (wid, ins) =
@@ -377,12 +378,10 @@ fun dispatcher_receive iter work_ins =
       in
         x
       end
-    val scll = 
-      Vector.foldri (fn (wid, ins, acc) => f (wid, ins) :: acc) [] work_ins
-    val scl = map sum_int4 (list_combine (rev scll))
+    val scll = map f work_insl
+    val scl = map sum_int4 (list_combine scll)
   in
-    end_rt_dispatch ();
-    scl
+    end_rt_dispatch (); scl
   end
 
 fun find_winner pl scl = 
@@ -410,6 +409,7 @@ fun dispatcher () =
     val exln = length (read_exl trainfile)
     val disp_outs = open_dispatcher_outs ncore
     val work_ins = open_worker_ins ncore
+    val work_insl = number_fst 0 (vector_to_list work_ins)
     fun close_all () = (Vector.app TextIO.closeOut disp_outs;
                         Vector.app TextIO.closeIn work_ins)
     val rt = Timer.startRealTimer ()
@@ -422,7 +422,7 @@ fun dispatcher () =
         val (node,pl) = total_time send_timer
           (dispatcher_send iter nprog pfn) disp_outs
         val scl = total_time wait_timer 
-          (dispatcher_receive iter) work_ins 
+          (dispatcher_receive iter) work_insl
         val (winner,(sc,speed,acc,conf)) = total_time sort_timer 
           find_winner pl scl
         val _ = report exln iter oldsc (sc,speed,acc,conf)
@@ -473,13 +473,11 @@ end (* struct *)
 (*
 load "hill_para";
 
-(something is wrong)
-
 PolyML.print_depth 0; 
 open kernel aiLib prog exec network hill_para;
 PolyML.print_depth 40;
 
-val (depth,width) = (8,2000);
+val (depth,width) = (8,1000);
 val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
@@ -518,7 +516,6 @@ val trainfile = selfdir ^ "/aaa_test100"; (* 5324 bits *)
 val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog;
 
 val _ = hill_para expname trainfile ncore nprog niter (depth,width);
-
 
 *)
 
