@@ -121,19 +121,17 @@ val constl0 = map fst (filter (fn x => snd x = 0) constl)
 val constlpos = filter (fn x => snd x > 0) constl
 
 (* read random *)
-(* val random_read () = Ins (readiid, *) 
-
 fun random_prog_size readb n = 
   let val l0 = if readb then constl0 else arityl0 in
-  if n <= 1 then Ins (random_elem l0,[]) else
+  if n <= 1 then Ins (random_elem_seed l0,[]) else
   let
     val candl = filter (fn x => snd x <= n - 1) 
       (if readb then constlpos else aritylpos) 
     val (id,arity) = 
       if null candl 
       then raise Msg "needs at least one arity 1 operator" 
-      else random_elem candl
-    val l = random_elem (number_partition arity (n - 1))
+      else random_elem_seed candl
+    val l = random_elem_seed (number_partition arity (n - 1))
   in
     if id = readiid 
       then Ins (id, map (random_prog_size true) l)
@@ -152,7 +150,7 @@ fun count_readiid (Ins(i,pl)) =
   if i = readiid then 1 else sum_int (map count_readiid pl)
   
 fun random_prog di = 
-  let val p = random_prog_size false (random_int (5,20)) in 
+  let val p = random_prog_size false (random_int_seed (5,20)) in 
     if count_readiid p <= 1
     then random_prog di
     else p

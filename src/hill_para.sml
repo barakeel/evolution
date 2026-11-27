@@ -17,6 +17,7 @@ fun create_fifo path =
   Posix.FileSys.mkfifo (path, 
     Posix.FileSys.S.flags [Posix.FileSys.S.irusr, Posix.FileSys.S.iwusr])
 
+val str = valOf o Real.fromString
 val sti = string_to_int 
 fun nts (n,p) = (its n ^ "-" ^ its p)
 fun stn s = let val (a,b) = split_pair #"-" s in (sti a, sti b) end 
@@ -29,7 +30,7 @@ fun sti4 iter s =
   end 
 
 fun random_node (depth,width) = 
-  (random_int (0,depth-1), random_int (0,width -1))
+  (random_int_seed (0,depth-1), random_int_seed (0,width -1))
   
 fun list_add x y = map (fn (x,y) => x + y) (combine_err (x,y));   
 fun list_add2 x y = map (fn ((x1,x2),(y1,y2)) => 
@@ -310,13 +311,18 @@ fun update_prog_wrapper pfn npl01o po = case po of
    NONE => () 
  | SOME p => update_prog pfn p (#3 (valOf npl01o))
 
+fun sextuple_of_list l = case l of 
+    [a,b,c,d,e,f] => (a,b,c,d,e,f)
+  | _ => raise Msg "sextuple_of_list"
+
 fun worker s =
   let
     val wid = sti s
     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_worker)
-    val (expname,trainfile,s3,s4,s5) = 
-      quintuple_of_list (readl (shmdir ^ "/param"))
+    val (expname,trainfile,s3,s4,s5,s6) = 
+      sextuple_of_list (readl (shmdir ^ "/param"))
     val _ = expname_glob := expname
+    val _ = init_seed (str s6)
     val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
     val pfn = read_pfn (shmdir ^ "/pfn_init")
     val exl = List.nth (cut_n ncore (read_exl trainfile), wid)
@@ -401,9 +407,10 @@ fun export_network pfn iter itertot =
 fun dispatcher () =  
   let 
     val _ = (run_time := 0; app (fn (_,r) => r := 0.0) timerl_dispatcher)
-    val (expname,trainfile,s3,s4,s5) = 
-      quintuple_of_list (readl (shmdir ^ "/param"))
+    val (expname,trainfile,s3,s4,s5,s6) = 
+      sextuple_of_list (readl (shmdir ^ "/param"))
     val _ = expname_glob := expname
+    val _ = init_seed (str s6)
     val (ncore,nprog,itertot) = (sti s3, sti s4, sti s5)
     val pfn = read_pfn (shmdir ^ "/pfn_init")
     val exln = length (read_exl trainfile)
@@ -445,9 +452,10 @@ fun dispatcher () =
 fun job s = 
   if String.isPrefix "dispatcher" s then dispatcher () else worker s
 
-fun hill_para expname trainfile ncore nprog itertot (depth,width) =
+fun hill_para expname seed trainfile ncore nprog itertot (depth,width) =
   let
     val _ = expname_glob := expname
+    val _ = init_seed seed
     val _ = app mkDir_err [selfdir ^ "/exp",expdir ()]
     val _ = writel (expdir () ^ "/param") 
       ["expname: " ^ expname, 
@@ -455,10 +463,12 @@ fun hill_para expname trainfile ncore nprog itertot (depth,width) =
        "ncore: " ^ its ncore, 
        "nprog: " ^ its nprog, 
        "itertot: " ^ its itertot,
-       "depth-width: " ^ its depth ^ "-" ^ its width]
+       "depth-width: " ^ its depth ^ "-" ^ its width,
+       "seed: " ^ rts seed
+       ]
     val _ = clean_dir shmdir
     val _ = writel (shmdir ^ "/param") 
-      [expname, trainfile, its ncore, its nprog, its itertot]
+      [expname, trainfile, its ncore, its nprog, its itertot, rts seed]
     val _ = write_pfn (shmdir ^ "/pfn_init") (init_pfn (depth,width))
     val _ = List.tabulate (ncore, fn i => create_fifo (dispatcher_fifo i)) 
     val _ = List.tabulate (ncore, fn i => create_fifo (worker_fifo i))
@@ -481,10 +491,11 @@ val (depth,width) = (8,1000);
 val nprog = 2000;
 val ncore = 50;
 val niter = 100000;
-val expname = "exp5"
+val expname = "exp6"
+val seed = random_seed ();
 val trainfile = selfdir ^ "/aaa_test1000"; (* 30444 bits *)
 
-val _ = hill_para expname trainfile ncore nprog niter (depth,width);
+val _ = hill_para expname seed trainfile ncore nprog niter (depth,width);
 
 
 17500 statistics: wait 5239.88s, send 570.00s, sort 9.99s
@@ -509,13 +520,13 @@ PolyML.print_depth 40;
 
 val (depth,width) = (4,1000);
 val nprog = 100;
-val ncore = 5;
+val ncore = 2;
 val niter = 100000;
-
+val expname = "exp9"
+val seed = 118276875.0 (* random_seed (); *)
 val trainfile = selfdir ^ "/aaa_test100"; (* 5324 bits *)
-val expname = "netid" ^ "-" ^ its depth ^ "-" ^ its width ^ "-" ^ its nprog;
 
-val _ = hill_para expname trainfile ncore nprog niter (depth,width);
+val _ = hill_para expname seed trainfile ncore nprog niter (depth,width);
 
 *)
 

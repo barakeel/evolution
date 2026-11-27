@@ -81,6 +81,42 @@ fun rts_pad n t =
     pad n' "0" (rts_round n t)
   end
 
+
+(* -------------------------------------------------------------------------
+   Random generator with a given seed
+   ------------------------------------------------------------------------- *)
+
+fun random_seed () = Real.fromInt (random_int (1,2147483647))
+
+val generator_glob = ref (fn () => 0.0)
+fun init_seed seed =
+  let val seed = Random.newgenseed seed in 
+    generator_glob := (fn () => Random.random seed)
+  end
+
+fun random_real_seed () = (!generator_glob) ()
+
+fun shuffle_seed l =
+  let
+    val l' = map (fn x => (x, random_real_seed ())) l in
+      map fst (dict_sort compare_rmin l')
+  end
+
+fun random_int_seed (a,b) =
+  if a > b then raise Msg ("random_int_seed: " ^ its a ^ " " ^ its b) else
+  if a = b then a else
+  let
+    val (ar,br) = (Real.fromInt a, Real.fromInt b)
+    val c = Real.floor (ar + random_real_seed () * (br - ar + 1.0))
+  in
+    if c >= b then b else c
+  end
+  
+fun random_elem_seed l =
+  if null l then raise Msg "random_elem: empty" else
+    List.nth (l, random_int_seed (0, length l - 1))
+  
+
 (* -------------------------------------------------------------------------
    Other tools
    ------------------------------------------------------------------------- *)

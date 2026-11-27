@@ -44,6 +44,14 @@ sig
   (* list tools *)
   val range : int * int * (int -> 'a) -> 'a list
 
+  (* random tools *)
+  val random_seed : unit -> real
+  val init_seed : real -> unit
+  val random_real_seed : unit -> real
+  val random_int_seed : (int * int) -> int
+  val shuffle_seed : 'a list -> 'a list
+  val random_elem_seed : 'a list -> 'a
+  
   (* general program primitives *)
   datatype prog = Ins of (int * prog list)
   val raw_prog : prog -> string
