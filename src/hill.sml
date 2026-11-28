@@ -468,10 +468,13 @@ fun hill expname seed trainfile ncore nprog itertot (depth,width) =
   let
     val _ = expname_glob := expname
     val _ = init_seed seed
-    val _ = app mkDir_err [selfdir ^ "/exp",expdir ()]
+    val _ = app mkDir_err [selfdir ^ "/exp",expdir ()] 
+    val l1 = map stil (readl trainfile)
+    val l2 = ex_of_sentencel l1   
     val _ = writel (expdir () ^ "/param") 
       ["expname: " ^ expname, 
-       "trainfile: " ^ trainfile, 
+       "trainfile: " ^ trainfile ^ ", " ^ 
+         its (length l2) ^ " examples, " ^ its (length l1) ^ " sentences", 
        "ncore: " ^ its ncore, 
        "nprog: " ^ its nprog, 
        "itertot: " ^ its itertot,
